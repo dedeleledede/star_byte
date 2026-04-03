@@ -47,6 +47,7 @@ export interface Message {
   avatarUrl: string | null;
   body: string;
   replyToMessageId: string | null;
+  editedAt: string | null;
   createdAt: string;
 }
 
@@ -201,6 +202,13 @@ export function fetchMessages(threadId: string) {
 export function sendMessage(threadId: string, input: { body: string; replyToMessageId?: string | null }) {
   return request<{ message: Message }>(`/api/threads/${threadId}/messages`, {
     method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateMessage(threadId: string, messageId: string, input: { body: string }) {
+  return request<{ message: Message }>(`/api/threads/${threadId}/messages/${messageId}`, {
+    method: "PATCH",
     body: JSON.stringify(input)
   });
 }
