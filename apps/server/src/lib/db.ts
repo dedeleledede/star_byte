@@ -538,6 +538,25 @@ export class DatabaseService {
     return this.getMessageById(id)!;
   }
 
+  updateMessage(input: { messageId: string; body: string }) {
+    const editedAt = new Date().toISOString();
+
+    this.db.prepare(`
+    UPDATE messages
+    SET body = ?, edited_at = ?
+    WHERE id = ? AND deleted_at IS NULL
+  `).run(input.body, editedAt, input.messageId);
+
+    return this.getMessageById(input.messageId);
+  }
+
+  deleteMentionNotificationsForMessage(messageId: string) {
+    this.db.prepare(`
+    DELETE FROM mention_notifications
+    WHERE message_id = ?
+  `).run(messageId);
+  }
+
   getMessageById(messageId: string) {
     return this.db.prepare(`
       SELECT
@@ -549,6 +568,7 @@ export class DatabaseService {
         u.avatar_url as avatarUrl,
         m.body,
         m.reply_to_message_id as replyToMessageId,
+        m.edited_at as editedAt,
         m.created_at as createdAt
       FROM messages m
       INNER JOIN users u ON u.id = m.user_id
@@ -567,6 +587,7 @@ export class DatabaseService {
         u.avatar_url as avatarUrl,
         m.body,
         m.reply_to_message_id as replyToMessageId,
+        m.edited_at as editedAt,
         m.created_at as createdAt
       FROM messages m
       INNER JOIN users u ON u.id = m.user_id
