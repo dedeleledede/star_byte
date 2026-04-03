@@ -37,6 +37,7 @@ export interface MessageRecord {
   avatarUrl: string | null;
   body: string;
   replyToMessageId: string | null;
+  editedAt: string | null;
   createdAt: string;
 }
 
@@ -216,9 +217,22 @@ export class DatabaseService {
   `);
     };
 
+    const ensureMessageColumns = () => {
+      const columns = this.db
+          .prepare("PRAGMA table_info(messages)")
+          .all() as Array<{ name: string }>;
+
+      const names = new Set(columns.map((column) => column.name));
+
+      if (!names.has("edited_at")) {
+        this.db.exec("ALTER TABLE messages ADD COLUMN edited_at TEXT");
+      }
+    };
+
     ensureRoomColumns();
     ensureUserProfileColumns();
     ensureThreadRoomColumns();
+    ensureMessageColumns();
 
     const existingGeneral = this.db.prepare(
       `SELECT id FROM threads WHERE slug = ?`
