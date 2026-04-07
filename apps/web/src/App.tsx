@@ -1515,14 +1515,27 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                     const grouped = isGroupedWithPrevious(message, previous);
                                     const urls = extractUrls(message.body);
                                     const isEditing = editingMessageId === message.id;
+                                    const isOwnMessage = message.userId === meQuery.data?.user.id;
 
                                     return (
                                         <article
                                             key={message.id}
+                                            ref={(element) => {
+                                                messageRefs.current[message.id] = element;
+                                            }}
                                             className={[
                                                 "message-line",
                                                 grouped ? "message-line-grouped" : ""
                                             ].filter(Boolean).join(" ")}
+                                            onContextMenu={(event) => {
+                                                if (!isOwnMessage) return;
+                                                event.preventDefault();
+                                                setMessageContextMenu({
+                                                    message,
+                                                    x: event.clientX,
+                                                    y: event.clientY
+                                                });
+                                            }}
                                         >
                                             {!grouped ? (
                                                 <div className="message-main">
@@ -1555,7 +1568,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
                                                         <div className="message-text">
                                                             <span className="message-prefix">&gt;</span>
-                                                            <div className="stack">
+
+                                                            <div className="stack message-content">
                                                                 {isEditing ? (
                                                                     <div className="message-edit-inline">
                                                                         <input
@@ -1570,7 +1584,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                                             autoFocus
                                                                         />
 
-                                                                        <div className="message-inline-actions">
+                                                                        <div className="message-inline-actions message-inline-actions-visible">
                                                                             <button
                                                                                 type="button"
                                                                                 className="button button-primary"
@@ -1601,29 +1615,33 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                                                 onJoinRoomPass={joinFromRoomPass}
                                                                             />
                                                                         ))}
-
-                                                                        {message.userId === meQuery.data?.user.id && (
-                                                                            <div className="message-inline-actions">
-                                                                                <button
-                                                                                    type="button"
-                                                                                    className="message-inline-action"
-                                                                                    onClick={() => startEditingMessage(message)}
-                                                                                >
-                                                                                    Edit
-                                                                                </button>
-                                                                            </div>
-                                                                        )}
                                                                     </>
                                                                 )}
                                                             </div>
+
+                                                            {isOwnMessage && !isEditing ? (
+                                                                <div className="message-actions">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="message-inline-action"
+                                                                        onClick={() => startEditingMessage(message)}
+                                                                    >
+                                                                        Edit
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="message-actions-placeholder" />
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
                                             ) : (
                                                 <div className="message-text message-text-grouped">
                                                     <span className="message-prefix">&gt;</span>
-                                                    <div className="stack">
+
+                                                    <div className="stack message-content">
                                                         <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
+
                                                         {urls.map((url) => (
                                                             <MessageEmbed
                                                                 key={url}
@@ -1632,6 +1650,20 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                             />
                                                         ))}
                                                     </div>
+
+                                                    {isOwnMessage ? (
+                                                        <div className="message-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="message-inline-action"
+                                                                onClick={() => startEditingMessage(message)}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="message-actions-placeholder" />
+                                                    )}
                                                 </div>
                                             )}
                                         </article>
@@ -1813,6 +1845,39 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             Delete Thread
                         </button>
                     )}
+                </div>
+            )}
+
+            {messageContextMenu && (
+                <div
+                    className="context-menu"
+                    style={{ left: messageContextMenu.x, top: messageContextMenu.y }}
+                >
+                    <button
+                        type="button"
+                        className="context-menu-item"
+                        onClick={() => {
+                            startEditingMessage(messageContextMenu.message);
+                            setMessageContextMenu(null);
+                        }}
+                    >
+                        Edit Message
+                    </button>
+
+                    <button
+                        type="button"
+                        className="context-menu-item context-menu-item-danger"
+                        onClick={async () => {
+                            if (!activeThread) return;
+
+                            await deleteMessageMutation.mutateAsync({
+                                threadId: activeThread.id,
+                                messageId: messageContextMenu.message.id
+                            });
+                        }}
+                    >
+                        Delete Message
+                    </button>
                 </div>
             )}
 
