@@ -1026,3 +1026,45 @@ strong {
   letter-spacing: inherit;
   font: inherit;
 }
+
+.message-author-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: text;
+}
+
+.message-author-text strong,
+.message-author-text .muted {
+  user-select: text;
+}
+
+.message-author-text:hover {
+  filter: brightness(1.08);
+}
+
+.message-inline-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.message-inline-action {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.message-inline-action:hover {
+  color: var(--accent-2);
+  text-decoration: underline;
+}
+
+.message-edit-inline {
+  display: grid;
+  gap: 8px;
+}

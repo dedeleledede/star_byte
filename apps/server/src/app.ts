@@ -33,7 +33,22 @@ export async function buildApp() {
   app.decorate("wsClients", new Map());
 
   await app.register(cors, {
-    origin: clientOrigin,
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      const allowed = new Set([
+        clientOrigin,
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://tauri.localhost",
+        "https://tauri.localhost"
+      ]);
+
+      callback(null, allowed.has(origin));
+    },
     credentials: true
   });
 

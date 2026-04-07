@@ -1,26 +1,42 @@
-import {SyntheticEvent, useMemo, useState, useEffect, useRef} from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-    createRoom,
-    joinRoom,
-    createTextThread,
-    fetchThreadMembers,
-    fetchThreads,
+    SyntheticEvent,
+    useMemo,
+    useState,
+    useEffect,
+    useRef,
+    type MouseEvent as ReactMouseEvent
+} from "react";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
     fetchMe,
     fetchUsers,
-    fetchMentionNotifications,
     fetchMessages,
-    getToken,
-    loginUser,
-    markMentionNotificationsRead,
-    registerUser,
-    sendMessage,
-    setToken,
-    updateMe,
     fetchWhispers,
-    createWhisper,
+    fetchThreads,
+    fetchThreadMembers,
+    fetchMentionNotifications,
     fetchEmbed,
 
+    loginUser,
+    registerUser,
+
+    markMentionNotificationsRead,
+    sendMessage,
+
+    setToken,
+    getToken,
+
+    updateMe,
+    updateMessage,
+
+    createWhisper,
+    createTextThread,
+    createRoom,
+    joinRoom,
+
+    type Message,
     type Thread,
     type Room,
     type RoomUser, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass,
@@ -28,6 +44,8 @@ import {
 } from "./api";
 import { useSocket } from "./hooks/useSocket";
 import { PwaPrompt } from "./components/PwaPrompt";
+
+const IS_DESKTOP_BUILD = (import.meta as any).env?.VITE_DESKTOP === "true";
 
 function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     const [mode, setMode] = useState<"login" | "register">("login");
@@ -281,6 +299,9 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [newThreadTitle, setNewThreadTitle] = useState("");
     const [roomTooltip, setRoomTooltip] = useState<null | { text: string; x: number; y: number; }>(null);
 
+    const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+    const [editingDraft, setEditingDraft] = useState("");
+
     const composerRef = useRef<HTMLInputElement | null>(null);
     const messagesRef = useRef<HTMLElement | null>(null);
     const stickToBottomRef = useRef(true);
@@ -531,6 +552,38 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         }
     });
 
+    const updateMessageMutation = useMutation({
+        mutationFn: async () => {
+            if (!activeThread || !editingMessageId) {
+                throw new Error("Pick a message first");
+            }
+
+            return updateMessage(activeThread.id, editingMessageId, {
+                body: editingDraft.trim()
+            });
+        },
+        onSuccess: async (data) => {
+            if (!activeThread) return;
+
+            setEditingMessageId(null);
+            setEditingDraft("");
+
+            queryClient.setQueryData(
+                ["messages", activeThread.id],
+                (current: typeof messagesQuery.data | undefined) => {
+                    const list = current ?? [];
+                    return list.map((item) => item.id === data.message.id ? data.message : item);
+                }
+            );
+
+            await queryClient.invalidateQueries({
+                queryKey: ["messages", activeThread.id]
+            });
+        }
+    });
+
+    // memos
+
     const validMentionUsernames = useMemo(() => {
         return new Set((threadMembersQuery.data ?? []).map((member) => member.username.toLowerCase()));
     }, [threadMembersQuery.data]);
@@ -675,6 +728,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         }
     }, [sidebarMode, whispers, activeWhisperId]);
 
+    useEffect(() => {
+        setEditingMessageId(null);
+        setEditingDraft("");
+    }, [activeThread?.id]);
+
+    // functions
+
     function renderMessageBody(
         body: string,
         currentUsername?: string,
@@ -816,20 +876,29 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         );
     }
 
+    function closeMentionPicker() {
+        setMentionOpen(false);
+        setMentionQuery("");
+        setMentionStart(null);
+        setSelectedMentionIndex(0);
+    }
+
     function updateMentionState(nextValue: string, caret: number) {
         const beforeCaret = nextValue.slice(0, caret);
-        const match = beforeCaret.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
+        const atIndex = beforeCaret.lastIndexOf("@");
 
-        if (!match) {
-            setMentionOpen(false);
-            setMentionQuery("");
-            setMentionStart(null);
-            setSelectedMentionIndex(0);
+        if (atIndex === -1) {
+            closeMentionPicker();
             return;
         }
 
-        const query = match[1] ?? "";
-        const atIndex = beforeCaret.lastIndexOf("@");
+        const query = beforeCaret.slice(atIndex + 1);
+
+        // keep the current "cancel if invalid characters appear after @"
+        if (!/^[a-zA-Z0-9_]*$/.test(query)) {
+            closeMentionPicker();
+            return;
+        }
 
         setMentionOpen(true);
         setMentionQuery(query);
@@ -941,6 +1010,20 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         openUserProfileFromId(userId);
     }
 
+    function handleAuthorMouseUp(
+        event: ReactMouseEvent<HTMLElement>,
+        userId: string,
+        username: string
+    ) {
+        const selection = window.getSelection()?.toString() ?? "";
+
+        if (selection.length > 0) {
+            return;
+        }
+
+        handleChatIdentityClick(userId, username, event.shiftKey);
+    }
+
     function RoomPassEmbed({roomPass, onJoin}: {
         roomPass: string;
         onJoin: (roomPass: string) => void;
@@ -968,6 +1051,16 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                         </button>
                     </div>
                 </div>);}
+
+    function startEditingMessage(message: Message) {
+        setEditingMessageId(message.id);
+        setEditingDraft(message.body);
+    }
+
+    function cancelEditingMessage() {
+        setEditingMessageId(null);
+        setEditingDraft("");
+    }
 
     async function joinFromRoomPass(roomPass: string) {
         const data = await joinRoomMutation.mutateAsync({ roomPass });
@@ -1334,6 +1427,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                     const previous = list[index - 1];
                                     const grouped = isGroupedWithPrevious(message, previous);
                                     const urls = extractUrls(message.body);
+                                    const isEditing = editingMessageId === message.id;
 
                                     return (
                                         <article
@@ -1359,30 +1453,81 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
                                                     <div className="message-body-block">
                                                         <div className="message-meta">
-                                                            <button
-                                                                type="button"
-                                                                className="message-author-button"
-                                                                onClick={(event) => handleChatIdentityClick(message.userId, message.username, event.shiftKey)}
+                                                            <span
+                                                                className="message-author-text"
+                                                                onMouseUp={(event) => handleAuthorMouseUp(event, message.userId, message.username)}
                                                             >
                                                                 <strong>{message.displayName}</strong>
                                                                 <span className="muted">@{message.username}</span>
-                                                            </button>
+                                                            </span>
+
                                                             <span className="muted">
-                                                {new Date(message.createdAt).toLocaleTimeString()}
-                                            </span>
+                                                                {new Date(message.createdAt).toLocaleTimeString()}
+                                                            </span>
                                                         </div>
 
                                                         <div className="message-text">
                                                             <span className="message-prefix">&gt;</span>
                                                             <div className="stack">
-                                                                <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
-                                                                {urls.map((url) => (
-                                                                    <MessageEmbed
-                                                                        key={url}
-                                                                        url={url}
-                                                                        onJoinRoomPass={joinFromRoomPass}
-                                                                    />
-                                                                ))}
+                                                                {isEditing ? (
+                                                                    <div className="message-edit-inline">
+                                                                        <input
+                                                                            value={editingDraft}
+                                                                            onChange={(event) => setEditingDraft(event.target.value)}
+                                                                            onKeyDown={(event) => {
+                                                                                if (event.key === "Escape") {
+                                                                                    event.preventDefault();
+                                                                                    cancelEditingMessage();
+                                                                                }
+                                                                            }}
+                                                                            autoFocus
+                                                                        />
+
+                                                                        <div className="message-inline-actions">
+                                                                            <button
+                                                                                type="button"
+                                                                                className="button button-primary"
+                                                                                onClick={() => updateMessageMutation.mutate()}
+                                                                                disabled={updateMessageMutation.isPending || !editingDraft.trim()}
+                                                                            >
+                                                                                {updateMessageMutation.isPending ? "Saving..." : "Save"}
+                                                                            </button>
+
+                                                                            <button
+                                                                                type="button"
+                                                                                className="button"
+                                                                                onClick={cancelEditingMessage}
+                                                                                disabled={updateMessageMutation.isPending}
+                                                                            >
+                                                                                Cancel
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <>
+                                                                        <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
+
+                                                                        {urls.map((url) => (
+                                                                            <MessageEmbed
+                                                                                key={url}
+                                                                                url={url}
+                                                                                onJoinRoomPass={joinFromRoomPass}
+                                                                            />
+                                                                        ))}
+
+                                                                        {message.userId === meQuery.data?.user.id && (
+                                                                            <div className="message-inline-actions">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="message-inline-action"
+                                                                                    onClick={() => startEditingMessage(message)}
+                                                                                >
+                                                                                    Edit
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1762,7 +1907,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 </div>
             )}
 
-            <PwaPrompt />
+            {!IS_DESKTOP_BUILD && <PwaPrompt />}
         </div>
     );
 }
