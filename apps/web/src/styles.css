@@ -1068,3 +1068,65 @@ strong {
   display: grid;
   gap: 8px;
 }
+
+.message-text {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: start;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-text-grouped {
+  padding-left: 40px;
+}
+
+.message-content {
+  min-width: 0;
+}
+
+.message-prefix {
+  color: var(--accent);
+  font-weight: 700;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.message-actions {
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  justify-self: end;
+  align-items: start;
+}
+
+.message-actions-placeholder {
+  width: 1px;
+}
+
+.message-line:hover .message-actions,
+.message-line:focus-within .message-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.message-inline-action {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.message-inline-action:hover {
+  background: var(--panel-3);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.message-inline-actions-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
