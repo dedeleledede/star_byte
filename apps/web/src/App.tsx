@@ -39,7 +39,7 @@ import {
     type Message,
     type Thread,
     type Room,
-    type RoomUser, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass,
+    type RoomUser, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass, deleteMessage,
     User
 } from "./api";
 import { useSocket } from "./hooks/useSocket";
@@ -291,6 +291,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [joinRoomPass, setJoinRoomPass] = useState("");
     const [roomOverlayOpen, setRoomOverlayOpen] = useState(false);
     const [roomContextMenu, setRoomContextMenu] = useState<null | { type: "room" | "thread"; id: string; x: number; y: number; }>(null);
+    const [messageContextMenu, setMessageContextMenu] = useState<null | { message: Message; x: number; y: number; }>(null);
     const [roomPassPanelRoomId, setRoomPassPanelRoomId] = useState<string | null>(null);
     const [copiedRoomPass, setCopiedRoomPass] = useState(false);
     const [roomIconPanelRoomId, setRoomIconPanelRoomId] = useState<string | null>(null);
@@ -304,6 +305,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     const composerRef = useRef<HTMLInputElement | null>(null);
     const messagesRef = useRef<HTMLElement | null>(null);
+    const messageRefs = useRef<Record<string, HTMLElement | null>>({});
     const stickToBottomRef = useRef(true);
 
     const meQuery = useQuery({queryKey: ["me"], queryFn: fetchMe});
@@ -575,6 +577,25 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                     return list.map((item) => item.id === data.message.id ? data.message : item);
                 }
             );
+
+            await queryClient.invalidateQueries({
+                queryKey: ["messages", activeThread.id]
+            });
+        }
+    });
+
+    const deleteMessageMutation = useMutation({
+        mutationFn: async ({ threadId, messageId }: { threadId: string; messageId: string }) => {
+            return deleteMessage(threadId, messageId);
+        },
+        onSuccess: async (_, vars) => {
+            if (!activeThread) return;
+
+            if (editingMessageId === vars.messageId) {
+                cancelEditingMessage();
+            }
+
+            setMessageContextMenu(null);
 
             await queryClient.invalidateQueries({
                 queryKey: ["messages", activeThread.id]
