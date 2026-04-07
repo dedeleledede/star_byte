@@ -201,6 +201,38 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
     return { message };
   });
 
+  app.delete("/threads/:threadId/messages/:messageId", {
+    preHandler: app.authenticate
+  }, async (request, reply) => {
+    const params = z.object({
+      threadId: z.string(),
+      messageId: z.string()
+    }).safeParse(request.params);
+
+    if (!params.success) {
+      return reply.code(400).send({ error: "invalid params" });
+    }
+
+    if (!app.db.canAccessThread(params.data.threadId, request.currentUser!.id)) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+
+    const existing = app.db.getMessageById(params.data.messageId);
+
+    if (!existing || existing.threadId !== params.data.threadId) {
+      return reply.code(404).send({ error: "message not found" });
+    }
+
+    if (existing.userId !== request.currentUser!.id) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+
+    app.db.deleteMentionNotificationsForMessage(existing.id);
+    app.db.deleteMessage(existing.id);
+
+    return { ok: true as const };
+  });
+
   app.get("/threads/:threadId/members", {
     preHandler: app.authenticate
   }, async (request, reply) => {
