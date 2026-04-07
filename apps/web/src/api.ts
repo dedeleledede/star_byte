@@ -83,7 +83,12 @@ export interface LinkEmbed {
   provider: string | null;
 }
 
-const TOKEN_KEY = "starbyte.token";
+const TOKEN_KEY = "star_byte.token";
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
+const WS_BASE_URL = (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, "") || "";
+
+function apiUrl(path: string) {return `${API_BASE_URL}${path}`;}
+function wsUrl(path: string) {return `${WS_BASE_URL}${path}`;}
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -112,7 +117,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     headers
   });
@@ -131,7 +136,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     if (response.status === 401) {
       setToken(null);
-      window.dispatchEvent(new Event("starbyte-auth-invalid"));
+      window.dispatchEvent(new Event("star_byte-auth-invalid"));
     }
 
     const details =
