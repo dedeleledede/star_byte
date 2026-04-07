@@ -755,7 +755,65 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         setEditingDraft("");
     }, [activeThread?.id]);
 
+    useEffect(() => {
+        function isEditableTarget(target: EventTarget | null) {
+            if (!(target instanceof HTMLElement)) return false;
+
+            const tag = target.tagName.toLowerCase();
+            return (
+                tag === "input" ||
+                tag === "textarea" ||
+                tag === "select" ||
+                target.isContentEditable
+            );
+        }
+
+        function handleArrowUpEdit(event: KeyboardEvent) {
+            if (event.key !== "ArrowUp") return;
+            if (screen !== "thread") return;
+            if (!activeThread) return;
+            if (roomOverlayOpen) return;
+            if (selectedUserProfile) return;
+            if (accountMenuOpen) return;
+            if (mentionOpen) return;
+            if (editingMessageId) return;
+            if (draft.trim()) return;
+
+            const targetIsComposer = event.target === composerRef.current;
+            if (isEditableTarget(event.target) && !targetIsComposer) return;
+
+            const latest = findLatestOwnMessage();
+            if (!latest) return;
+
+            event.preventDefault();
+            startEditingMessage(latest);
+        }
+
+        window.addEventListener("keydown", handleArrowUpEdit);
+        return () => window.removeEventListener("keydown", handleArrowUpEdit);
+    }, [
+        screen, activeThread,
+        roomOverlayOpen, selectedUserProfile,
+        accountMenuOpen, mentionOpen,
+        editingMessageId, draft,
+        messagesQuery.data, meQuery.data?.user.id
+    ]);
+
     // functions
+
+    function findLatestOwnMessage() {
+        const myUserId = meQuery.data?.user.id;
+        if (!myUserId) return null;
+
+        const list = messagesQuery.data ?? [];
+        for (let index = list.length - 1; index >= 0; index -= 1) {
+            if (list[index].userId === myUserId) {
+                return list[index];
+            }
+        }
+
+        return null;
+    }
 
     function renderMessageBody(
         body: string,
