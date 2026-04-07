@@ -550,6 +550,14 @@ export class DatabaseService {
     return this.getMessageById(input.messageId);
   }
 
+  deleteMessage(messageId: string) {
+    this.db.prepare(`
+    UPDATE messages
+    SET deleted_at = ?
+    WHERE id = ? AND deleted_at IS NULL
+  `).run(new Date().toISOString(), messageId);
+  }
+
   deleteMentionNotificationsForMessage(messageId: string) {
     this.db.prepare(`
     DELETE FROM mention_notifications

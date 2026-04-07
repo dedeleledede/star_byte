@@ -218,6 +218,12 @@ export function updateMessage(threadId: string, messageId: string, input: { body
   });
 }
 
+export function deleteMessage(threadId: string, messageId: string) {
+  return request<{ ok: true }>(`/api/threads/${threadId}/messages/${messageId}`, {
+    method: "DELETE"
+  });
+}
+
 export function fetchThreadMembers(threadId: string) {
   return request<{ members: ThreadMember[] }>(`/api/threads/${threadId}/members`);
 }
