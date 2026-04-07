@@ -677,12 +677,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }, [activeThread?.id, queryClient]);
 
     useEffect(() => {
-        function closeMenu() {
+        function closeMenus() {
             setRoomContextMenu(null);
+            setMessageContextMenu(null);
         }
 
-        window.addEventListener("click", closeMenu);
-        return () => window.removeEventListener("click", closeMenu);
+        window.addEventListener("click", closeMenus);
+        return () => window.removeEventListener("click", closeMenus);
     }, []);
 
     useEffect(() => {
@@ -1076,6 +1077,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     function startEditingMessage(message: Message) {
         setEditingMessageId(message.id);
         setEditingDraft(message.body);
+
+        requestAnimationFrame(() => {
+            messageRefs.current[message.id]?.scrollIntoView({
+                behavior: "smooth",
+                block: "center"
+            });
+        });
     }
 
     function cancelEditingMessage() {
