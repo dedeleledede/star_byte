@@ -39,6 +39,34 @@ export function useSocket(enabled: boolean) {
             }
         );
       }
+
+      if (payload.type === "message.updated") {
+        const message = payload.data as Message;
+
+        queryClient.setQueryData<Message[]>(
+            ["messages", message.threadId],
+            (current = []) => current.map((item) => item.id === message.id ? message : item)
+        );
+      }
+
+      if (payload.type === "message.deleted") {
+        const data = payload.data as { threadId: string; messageId: string };
+
+        queryClient.setQueryData<Message[]>(
+            ["messages", data.threadId],
+            (current = []) => current.filter((item) => item.id !== data.messageId)
+        );
+      }
+
+      if (payload.type === "mention.created") {
+        void queryClient.invalidateQueries({ queryKey: ["mention-notifications"] });
+      }
+
+      if (payload.type === "thread.deleted") {
+        const data = payload.data as { threadId: string; roomId: string };
+        void queryClient.invalidateQueries({ queryKey: ["threads", data.roomId] });
+        queryClient.removeQueries({ queryKey: ["messages", data.threadId] });
+      }
     };
 
     const heartbeat = window.setInterval(() => {

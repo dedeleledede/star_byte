@@ -52,6 +52,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     const [username, setUsername] = useState("");
     const [displayName, setDisplayName] = useState("");
     const [password, setPassword] = useState("");
+    const [validationError, setValidationError] = useState<string | null>(null);
     const queryClient = useQueryClient();
 
     const mutation = useMutation({
@@ -73,7 +74,41 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
 
     function handleSubmit(event: SyntheticEvent) {
         event.preventDefault();
+
+        if (mode === "login") {
+            if (username.trim().length < 3 || !password) {
+                setValidationError("Preencha usuário e senha corretamente.");
+                return;
+            }
+
+            if (password.length < 8) {
+                setValidationError("A senha deve ter pelo menos 8 caracteres.");
+                return;
+            }
+        } else {
+            if (!/^[a-zA-Z0-9_]{3,20}$/.test(username.trim())) {
+                setValidationError("Use apenas letras, números e sublinhado no nome de usuário.");
+                return;
+            }
+
+            if (displayName.trim().length < 2 || displayName.trim().length > 40) {
+                setValidationError("O nome de exibição deve ter entre 2 e 40 caracteres.");
+                return;
+            }
+
+            if (password.length < 8 || password.length > 128) {
+                setValidationError("A senha deve ter entre 8 e 128 caracteres.");
+                return;
+            }
+        }
+
+        setValidationError(null);
         mutation.mutate();
+    }
+
+    function clearAuthError() {
+        setValidationError(null);
+        mutation.reset();
     }
 
     return (
@@ -86,14 +121,20 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
                   <button
                       type="button"
                       className={`button ${mode === "login" ? "button-primary" : ""}`}
-                      onClick={() => setMode("login")}
+                      onClick={() => {
+                          setMode("login");
+                          clearAuthError();
+                      }}
                   >
                     Login
                   </button>
                   <button
                       type="button"
                       className={`button ${mode === "register" ? "button-primary" : ""}`}
-                      onClick={() => setMode("register")}
+                      onClick={() => {
+                          setMode("register");
+                          clearAuthError();
+                      }}
                   >
                     Register
                   </button>
@@ -102,24 +143,41 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
                 <form onSubmit={handleSubmit} className="stack">
                     <label className="stack">
                         <span>Username</span>
-                        <input value={username} onChange={(event) => setUsername(event.target.value)} required />
+                        <input value={username} onChange={(event) => {
+                            setUsername(event.target.value);
+                            clearAuthError();
+                        }} required />
+                        {mode === "register" && <span className="muted">3-20 caracteres: letras, números ou sublinhado.</span>}
                 </label>
 
                 {mode === "register" && (
                     <label className="stack">
                         <span>Display name</span>
-                        <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} required />
+                        <input value={displayName} onChange={(event) => {
+                            setDisplayName(event.target.value);
+                            clearAuthError();
+                        }} required />
+                        <span className="muted">Entre 2 e 40 caracteres.</span>
                     </label>
                 )}
 
                 <label className="stack">
                     <span>Password</span>
-                    <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+                    <input type="password" value={password} onChange={(event) => {
+                        setPassword(event.target.value);
+                        clearAuthError();
+                    }} required />
+                    {mode === "register" && <span className="muted">Entre 8 e 128 caracteres.</span>}
                 </label>
 
-                {mutation.error && <p className="error">{(mutation.error as Error).message}</p>}
+                {(validationError || mutation.error) && (
+                    <p className="error">{validationError ?? (mutation.error as Error).message}</p>
+                )}
 
-                <button className="button button-primary" disabled={mutation.isPending}>
+                <button
+                    className="button button-primary"
+                    disabled={mutation.isPending || !username.trim() || !password || (mode === "register" && !displayName.trim())}
+                >
                     {mutation.isPending ? "Working..." : mode === "login" ? "Sign in" : "Create account"}
                 </button>
               </form>
@@ -464,7 +522,9 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 ["messages", activeThread.id],
                 (current: typeof messagesQuery.data | undefined) => {
                     const list = current ?? [];
-                    return [...list, data.message];
+                    return list.some((message) => message.id === data.message.id)
+                        ? list
+                        : [...list, data.message];
                 }
             );
 
@@ -476,7 +536,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     const createThreadMutation = useMutation({
         mutationFn: async (title: string) => {
-            if (!activeRoomId) throw new Error("Pick a room first");
+            if (!activeRoomId) throw new Error("Escolha uma Room antes de criar uma Thread.");
             return createTextThread({ title, roomId: activeRoomId });
         },
         onSuccess: async (data) => {
@@ -1061,6 +1121,15 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         });
     }
 
+    function canDeleteRoomThread(thread: Thread) {
+        const currentUserId = meQuery.data?.user.id;
+        return Boolean(
+            currentUserId &&
+            activeRoom &&
+            (activeRoom.hostUserId === currentUserId || thread.createdBy === currentUserId)
+        );
+    }
+
     function openRoomThread(roomId: string, threadId: string) {
         setSidebarMode("threads");
         setActiveRoomId(roomId);
@@ -1078,6 +1147,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     function openUserProfileFromId(userId: string) {
         const user = usersById.get(userId);
         if (!user) return;
+        createWhisperMutation.reset();
         setSelectedUserProfile(user);
     }
 
@@ -1188,7 +1258,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                 <input
                                     placeholder="Room name"
                                     value={roomName}
-                                    onChange={(event) => setRoomName(event.target.value)}
+                                    onChange={(event) => {
+                                        setRoomName(event.target.value);
+                                        createRoomMutation.reset();
+                                    }}
                                 />
 
                                 <button
@@ -1203,7 +1276,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                 <input
                                     placeholder="starbyte://1234-1234"
                                     value={joinRoomPass}
-                                    onChange={(event) => setJoinRoomPass(event.target.value)}
+                                    onChange={(event) => {
+                                        setJoinRoomPass(event.target.value);
+                                        joinRoomMutation.reset();
+                                    }}
                                 />
 
                                 <button
@@ -1383,6 +1459,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                             openRoomThread(activeRoom.id, thread.id);
                                         }}
                                         onContextMenu={(event) => {
+                                            if (!canDeleteRoomThread(thread)) return;
                                             event.preventDefault();
                                             setRoomContextMenu({
                                                 type: "thread",
@@ -1403,7 +1480,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             <input
                                 placeholder={activeRoom ? "New thread" : "Pick a room first"}
                                 value={newThreadTitle}
-                                onChange={(event) => setNewThreadTitle(event.target.value)}
+                                onChange={(event) => {
+                                    setNewThreadTitle(event.target.value);
+                                    createThreadMutation.reset();
+                                }}
                                 disabled={!activeRoom || createThreadMutation.isPending}
                             />
                             <button
@@ -1414,6 +1494,12 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             >
                                 {createThreadMutation.isPending ? "Creating..." : "Create Thread"}
                             </button>
+                            {createThreadMutation.error && (
+                                <p className="error">{(createThreadMutation.error as Error).message}</p>
+                            )}
+                            {deleteThreadMutation.error && (
+                                <p className="error">{(deleteThreadMutation.error as Error).message}</p>
+                            )}
                         </div>
                     </>
                 ) : (
@@ -1474,7 +1560,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                         <button
                                             className="button button-primary"
                                             type="button"
-                                            onClick={handleCreateThread}
+                                            onClick={() => createThreadMutation.mutate("general")}
                                             disabled={!activeRoom || createThreadMutation.isPending}
                                         >
                                             {createThreadMutation.isPending ? "Creating..." : "Create first thread"}
@@ -1739,6 +1825,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                 <button className="button button-primary" disabled={sendMutation.isPending || !activeThread}>
                                     Send
                                 </button>
+                                {sendMutation.error && <p className="error">{(sendMutation.error as Error).message}</p>}
                             </form>
                         </>
                     )}
@@ -1764,7 +1851,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                     key={user.id}
                                     type="button"
                                     className="room-user-item"
-                                    onClick={() => setSelectedUserProfile(user)}
+                                    onClick={() => {
+                                        createWhisperMutation.reset();
+                                        setSelectedUserProfile(user);
+                                    }}
                                 >
                                     <AvatarSquare
                                         displayName={user.displayName}
@@ -1995,6 +2085,9 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             >
                                 {createWhisperMutation.isPending ? "Opening..." : "Message"}
                             </button>
+                            {createWhisperMutation.error && (
+                                <p className="error">{(createWhisperMutation.error as Error).message}</p>
+                            )}
                         </div>
                     </div>
                 </div>

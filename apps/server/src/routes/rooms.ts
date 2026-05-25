@@ -108,7 +108,7 @@ export const roomRoutes: FastifyPluginAsync = async (app) => {
         const room = app.db.findRoomByRoomPass(normalizedRoomPass);
 
         if (!room) {
-            return reply.code(404).send({ error: "room not found" });
+            return reply.code(404).send({ error: "invalid room pass" });
         }
 
         app.db.addMemberToRoom(room.id, request.currentUser!.id, "member");

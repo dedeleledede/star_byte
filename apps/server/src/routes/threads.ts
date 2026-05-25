@@ -21,6 +21,26 @@ function extractMentionUsernames(body: string) {
 }
 
 export const threadRoutes: FastifyPluginAsync = async (app) => {
+  function emitToUsers(userIds: string[], type: string, data: unknown) {
+    const payload = JSON.stringify({ type, data });
+
+    for (const userId of new Set(userIds)) {
+      for (const socket of app.wsClients.get(userId) ?? []) {
+        if (socket.readyState === 1) {
+          socket.send(payload);
+        }
+      }
+    }
+  }
+
+  function emitToThreadMembers(threadId: string, type: string, data: unknown) {
+    emitToUsers(
+      app.db.listMembersForThread(threadId).map((member) => member.id),
+      type,
+      data
+    );
+  }
+
   app.get("/users", {
     preHandler: app.authenticate
   }, async () => {
@@ -146,9 +166,11 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
           mentionedByUserId: request.currentUser!.id,
           mentionedUserIds: [...new Set(matchedUserIds)]
         });
+        emitToUsers(matchedUserIds, "mention.created", { threadId: params.data.threadId });
       }
     }
 
+    emitToThreadMembers(params.data.threadId, "message.updated", message);
     return { message };
   });
 
@@ -195,9 +217,11 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
           mentionedByUserId: request.currentUser!.id,
           mentionedUserIds: [...new Set(matchedUserIds)]
         });
+        emitToUsers(matchedUserIds, "mention.created", { threadId: params.data.threadId });
       }
     }
 
+    emitToThreadMembers(params.data.threadId, "message.created", message);
     return { message };
   });
 
@@ -229,6 +253,10 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
 
     app.db.deleteMentionNotificationsForMessage(existing.id);
     app.db.deleteMessage(existing.id);
+    emitToThreadMembers(params.data.threadId, "message.deleted", {
+      threadId: params.data.threadId,
+      messageId: existing.id
+    });
 
     return { ok: true as const };
   });
@@ -269,10 +297,22 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: "thread not found" });
     }
 
-    if (!thread.roomId || !app.db.isRoomMember(thread.roomId, request.currentUser!.id)) {
+    if (!thread.roomId) {
       return reply.code(403).send({ error: "forbidden" });
     }
 
+    const room = app.db.getRoomById(thread.roomId);
+    const mayDelete = room?.hostUserId === request.currentUser!.id ||
+      thread.createdBy === request.currentUser!.id;
+
+    if (!mayDelete) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+
+    emitToThreadMembers(thread.id, "thread.deleted", {
+      threadId: thread.id,
+      roomId: thread.roomId
+    });
     app.db.deleteThread(thread.id);
     return { ok: true as const };
   });

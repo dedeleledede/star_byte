@@ -117,10 +117,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(apiUrl(path), {
-    ...init,
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), {
+      ...init,
+      headers
+    });
+  } catch {
+    throw new Error("Não foi possível conectar ao servidor. Verifique sua conexão.");
+  }
 
   const text = await response.text();
 
@@ -139,14 +144,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       window.dispatchEvent(new Event("star_byte-auth-invalid"));
     }
 
-    const details =
-        data?.issues
-            ? JSON.stringify(data.issues, null, 2)
-            : data?.error
-            ?? data?.raw
-            ?? `request failed (${response.status})`;
+    const errorCode = typeof data?.error === "string" ? data.error : "";
+    const userMessages: Record<string, string> = {
+      "invalid credentials": "Usuário ou senha incorretos.",
+      "invalid payload": "Preencha os campos corretamente.",
+      "username already taken": "Este nome de usuário já está em uso.",
+      "forbidden": "Você não tem permissão para fazer isso.",
+      "room not found": "Room não encontrada.",
+      "invalid room pass": "Room Pass inválido ou expirado.",
+      "thread not found": "Thread não encontrada.",
+      "message not found": "Mensagem não encontrada.",
+      "roomId is required": "Escolha uma Room antes de criar uma Thread.",
+      "cannot whisper yourself": "Você não pode iniciar um Whisper consigo mesmo.",
+      "target user not found": "Usuário não encontrado."
+    };
 
-    throw new Error(details);
+    if (response.status >= 500) {
+      throw new Error("Ocorreu um erro interno. Tente novamente em instantes.");
+    }
+
+    throw new Error(userMessages[errorCode] ?? "Não foi possível concluir a operação.");
   }
 
   return data as T;
