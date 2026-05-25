@@ -2,7 +2,11 @@ node_modules
 dist
 coverage
 *.log
-.env
+.env*
+!.env.example
+.idea/
 apps/server/data/*.db
+apps/server/data/*.db-shm
+apps/server/data/*.db-wal
 apps/server/data/uploads/*
 !apps/server/data/uploads/.gitkeep
