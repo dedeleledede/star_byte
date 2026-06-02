@@ -29,7 +29,10 @@ export const uploadRoutes: FastifyPluginAsync = async (app) => {
   await fs.mkdir(uploadsDir, { recursive: true });
 
   app.post("/uploads/images", {
-    preHandler: app.authenticate
+    preHandler: app.authenticate,
+    config: {
+      rateLimit: { max: 20, timeWindow: "1 minute" }
+    }
   }, async (request, reply) => {
     let image;
     try {

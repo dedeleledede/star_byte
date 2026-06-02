@@ -52,7 +52,10 @@ export const roomRoutes: FastifyPluginAsync = async (app) => {
     });
 
     app.post("/rooms", {
-        preHandler: app.authenticate
+        preHandler: app.authenticate,
+        config: {
+            rateLimit: { max: 10, timeWindow: "1 hour" }
+        }
     }, async (request, reply) => {
         const parsed = createRoomSchema.safeParse(request.body);
 
@@ -93,7 +96,10 @@ export const roomRoutes: FastifyPluginAsync = async (app) => {
     });
 
     app.post("/rooms/join", {
-        preHandler: app.authenticate
+        preHandler: app.authenticate,
+        config: {
+            rateLimit: { max: 20, timeWindow: "1 minute" }
+        }
     }, async (request, reply) => {
         const parsed = joinRoomSchema.safeParse(request.body);
 

@@ -171,6 +171,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       throw new Error("Ocorreu um erro interno. Tente novamente em instantes.");
     }
 
+    if (response.status === 429) {
+      throw new Error("Muitas tentativas em pouco tempo. Aguarde um instante e tente novamente.");
+    }
+
     throw new Error(userMessages[errorCode] ?? "Não foi possível concluir a operação.");
   }
 

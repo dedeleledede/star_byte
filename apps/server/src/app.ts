@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import { DatabaseService } from "./lib/db.js";
 import { NoopIrcBridge } from "./lib/ircBridge.js";
@@ -17,13 +18,20 @@ import { whisperRoutes } from "./routes/whispers.js";
 import { uploadRoutes } from "./routes/uploads.js";
 
 export async function buildApp() {
+  const trustProxy = process.env.TRUST_PROXY === "true";
   const app = Fastify({
-    logger: true
+    logger: true,
+    trustProxy
   });
 
   const dbPath = process.env.DB_PATH ?? "./data/starbyte.db";
   const clientOrigin = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
   const jwtSecret = process.env.JWT_SECRET ?? "change-me-now";
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction && (!process.env.DB_PATH || !process.env.CLIENT_ORIGIN || !process.env.JWT_SECRET || jwtSecret === "change-me-now")) {
+    throw new Error("Production requires DB_PATH, CLIENT_ORIGIN, and a non-default JWT_SECRET.");
+  }
 
   const db = new DatabaseService(dbPath);
   db.init();
@@ -41,13 +49,14 @@ export async function buildApp() {
         return;
       }
 
-      const allowed = new Set([
-        clientOrigin,
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://tauri.localhost",
-        "https://tauri.localhost"
-      ]);
+      const allowed = new Set([clientOrigin]);
+
+      if (!isProduction) {
+        allowed.add("http://localhost:5173");
+        allowed.add("http://127.0.0.1:5173");
+        allowed.add("http://tauri.localhost");
+        allowed.add("https://tauri.localhost");
+      }
 
       callback(null, allowed.has(origin));
     },
@@ -56,6 +65,10 @@ export async function buildApp() {
 
   await app.register(jwt, {
     secret: jwtSecret
+  });
+
+  await app.register(rateLimit, {
+    global: false
   });
 
   await app.register(multipart, {

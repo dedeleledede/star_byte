@@ -175,7 +175,10 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post("/threads/:threadId/messages", {
-    preHandler: app.authenticate
+    preHandler: app.authenticate,
+    config: {
+      rateLimit: { max: 60, timeWindow: "1 minute" }
+    }
   }, async (request, reply) => {
     const params = z.object({
       threadId: z.string()

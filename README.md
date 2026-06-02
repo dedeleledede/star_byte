@@ -1,37 +1,20 @@
-# Star Byte — starter pack
+# Star Byte
 
-This is the first implementation slice for your IRC-based private chat platform.
+Private community chat built with Fastify, SQLite, React, Vite, PWA support, and an optional Tauri desktop shell.
 
-## What is already here
+## Features
 
-- Fastify + TypeScript backend
-- SQLite bootstrap with `better-sqlite3`
-- JWT auth
-- chat + message tables
-- default `#general` style room
-- WebSocket live message broadcast
-- React + Vite + PWA frontend
-- login / register UI
-- chat list + message list + send message UI
-- service worker update prompt
-- IRC bridge **stub** so you can wire Ergo next without rewriting the app layer
+- JWT login and registration
+- Rooms, Room Pass invites, Threads, and Whispers
+- Message create, edit, soft delete, replies, and mentions
+- WebSocket updates with polling fallback
+- Profile and chat image uploads
+- Bounded link previews with SSRF protections
+- PWA frontend and optional Tauri desktop window
 
-## What is not wired yet
+## Development
 
-- real IRC connection to Ergo
-- file uploads
-- embeds
-- custom emoji
-- reply UI
-- mentions parser
-- moderation
-- voice / P2P privacy mode
-
-## Recommended runtime
-
-Use **Node 22 LTS** so you stay comfortably inside current Vite requirements and avoid random toolchain pain.
-
-## First run
+Use a current supported Node release. Node 22 LTS is recommended.
 
 ```bash
 cp apps/server/.env.example apps/server/.env
@@ -39,19 +22,135 @@ npm install
 npm run dev
 ```
 
-- backend: `http://localhost:3001`
-- frontend: `http://localhost:5173`
+- Backend: `http://localhost:3001`
+- Frontend: `http://localhost:5173`
 
-## Suggested next implementation order
+To run the Tauri desktop shell, start the backend and desktop frontend separately:
 
-1. Wire the IRC bridge to Ergo
-2. Add file uploads
-3. Add reply + mention metadata to messages
-4. Add room creation / member invites
-5. Add embed preview worker
-6. Add custom emoji packs
+```bash
+npm run dev --workspace @starbyte/server
+npm run tauri:dev --workspace @starbyte/web
+```
 
-## Notes
+## Build
 
-The backend stores messages in SQLite first and broadcasts them over WebSocket.
-The IRC bridge is currently a no-op adapter. That is deliberate: it lets you build the app layer cleanly before binding it to a specific IRC server behavior.
+```bash
+npm run build
+npm run build:tauri --workspace @starbyte/web
+cd apps/web/src-tauri && cargo check
+```
+
+## Production Environment
+
+Set these server variables explicitly:
+
+```dotenv
+NODE_ENV=production
+HOST=127.0.0.1
+PORT=3001
+TRUST_PROXY=true
+JWT_SECRET=replace-with-a-long-random-secret
+CLIENT_ORIGIN=https://chat.example.com
+DB_PATH=/var/lib/star-byte/starbyte.db
+```
+
+Build the browser frontend with:
+
+```dotenv
+VITE_API_BASE_URL=https://chat.example.com
+VITE_WS_BASE_URL=wss://chat.example.com
+```
+
+Production startup rejects missing `DB_PATH`, missing `CLIENT_ORIGIN`, and the default or missing `JWT_SECRET`.
+
+Build and start the server:
+
+```bash
+npm run build --workspace @starbyte/server
+npm run start --workspace @starbyte/server
+```
+
+## Reverse Proxy
+
+Serve the web build from `apps/web/dist`. Forward `/api/*`, `/ws`, and `/health` to Fastify. WebSocket forwarding must preserve upgrade headers.
+
+Example Nginx configuration:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name chat.example.com;
+
+    root /srv/star-byte/apps/web/dist;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ws {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+
+    location /health {
+        proxy_pass http://127.0.0.1:3001;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+Terminate HTTPS at the proxy. Do not expose Fastify directly to the public internet.
+Set `TRUST_PROXY=true` only when Fastify is reachable exclusively through your trusted reverse proxy. This lets rate limits use forwarded client IP addresses safely.
+
+## SQLite Persistence And Backups
+
+`DB_PATH` must point to persistent storage. Uploaded images are stored in an `uploads` directory next to the SQLite database, so back up both paths.
+
+Example backup:
+
+```bash
+mkdir -p /var/backups/star-byte
+sqlite3 /var/lib/star-byte/starbyte.db \
+  ".backup '/var/backups/star-byte/starbyte-$(date +%F-%H%M%S).db'"
+cp -a /var/lib/star-byte/uploads /var/backups/star-byte/uploads
+```
+
+Example restore:
+
+```bash
+cp /var/backups/star-byte/starbyte-YYYY-MM-DD-HHMMSS.db /var/lib/star-byte/starbyte.db
+cp -a /var/backups/star-byte/uploads /var/lib/star-byte/uploads
+```
+
+Stop the server before restoring. Test restore procedures before inviting users.
+
+## Launch Smoke Test
+
+Run this with two accounts before each release:
+
+1. Register and log in.
+2. Edit profile and upload an avatar.
+3. Create a Room and a Thread.
+4. Generate a Room Pass and join from the second account.
+5. Send, reply to, edit, and delete messages.
+6. Upload a chat image.
+7. Send a mention and confirm the notification.
+8. Create a Whisper.
+9. Reload both clients and confirm session restoration.
+10. Restart the backend and confirm WebSocket reconnection or polling recovery.
+
+## Known Deferred Work
+
+- Room Passes currently use plaintext storage while the schema still contains `room_pass_hash`. Migrate this carefully without wiping live data.
+- Sections are not implemented beyond the existing `section_id` compatibility column.
+- The IRC bridge remains a no-op adapter.

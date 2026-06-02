@@ -21,7 +21,11 @@ const updateMeSchema = z.object({
 });
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/register", async (request, reply) => {
+  app.post("/register", {
+    config: {
+      rateLimit: { max: 5, timeWindow: "1 hour" }
+    }
+  }, async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid payload", issues: parsed.error.flatten() });
@@ -61,7 +65,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.post("/login", async (request, reply) => {
+  app.post("/login", {
+    config: {
+      rateLimit: { max: 10, timeWindow: "1 minute" }
+    }
+  }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid payload", issues: parsed.error.flatten() });
