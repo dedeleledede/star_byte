@@ -2,11 +2,15 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getToken, type Message } from "../api";
 
-const WS_BASE_URL =
-    (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, "") || "";
+const WS_BASE_URL = (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, "") || "";
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
 
 function wsUrl(path: string) {
-  return `${WS_BASE_URL}${path}`;
+  if (WS_BASE_URL) return `${WS_BASE_URL}${path}`;
+  if (API_BASE_URL) return `${API_BASE_URL.replace(/^http/, "ws")}${path}`;
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}${path}`;
 }
 
 export function useSocket(enabled: boolean) {
@@ -17,7 +21,6 @@ export function useSocket(enabled: boolean) {
 
     const token = getToken();
     if (!token) return;
-    if (!WS_BASE_URL) return;
 
     const socket = new WebSocket(
         wsUrl(`/ws?token=${encodeURIComponent(token)}`)

@@ -85,10 +85,8 @@ export interface LinkEmbed {
 
 const TOKEN_KEY = "star_byte.token";
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
-const WS_BASE_URL = (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, "") || "";
 
 function apiUrl(path: string) {return `${API_BASE_URL}${path}`;}
-function wsUrl(path: string) {return `${WS_BASE_URL}${path}`;}
 
 export function mediaUrl(url?: string | null) {
   if (!url) return "";

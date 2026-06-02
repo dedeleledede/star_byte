@@ -1,5 +1,6 @@
 import "fastify";
 import "@fastify/jwt";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import type { DatabaseService, SafeUser } from "../lib/db.js";
 import type { IrcBridge } from "../lib/ircBridge.js";
