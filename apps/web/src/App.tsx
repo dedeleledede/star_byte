@@ -40,12 +40,13 @@ import {
     type Thread,
     type Room,
     type RoomUser, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass, deleteMessage,
+    uploadImage, mediaUrl,
     User
 } from "./api";
 import { useSocket } from "./hooks/useSocket";
 import { PwaPrompt } from "./components/PwaPrompt";
 
-const IS_DESKTOP_BUILD = (import.meta as any).env?.VITE_DESKTOP === "true";
+const IS_TAURI = "__TAURI_INTERNALS__" in window;
 
 function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     const [mode, setMode] = useState<"login" | "register">("login");
@@ -196,7 +197,7 @@ function AvatarSquare({displayName, avatarUrl, size = "sm"}: {
     size?: "sm" | "lg";
 }) {return (<div className={`avatar-square avatar-square-${size}`}>
             {avatarUrl ? (
-                <img src={avatarUrl} alt={displayName} className="avatar-image" />
+                <img src={mediaUrl(avatarUrl)} alt={displayName} className="avatar-image" />
             ) : (
                 <span className="avatar-fallback">{avatarInitial(displayName)}</span>
             )}
@@ -234,7 +235,8 @@ function isGroupedWithPrevious(current: { userId: string; createdAt: string }, p
 function ProfileScreen({   user, displayName, setDisplayName,
                            avatarUrl, setAvatarUrl,
                            bio, setBio, statusText, setStatusText,
-                           onBack, onSave, isSaving, error
+                           onAvatarUpload, isUploadingAvatar,
+                           onBack, onSave, isSaving, error, uploadError
                        }: {
     user: {
         username: string;
@@ -251,10 +253,13 @@ function ProfileScreen({   user, displayName, setDisplayName,
     setBio: (value: string) => void;
     statusText: string;
     setStatusText: (value: string) => void;
+    onAvatarUpload: (file: File) => void;
+    isUploadingAvatar: boolean;
     onBack: () => void;
     onSave: (event: SyntheticEvent) => void;
     isSaving: boolean;
     error?: string;
+    uploadError?: string;
 }) {
     return (
         <main className="thread-panel">
@@ -294,6 +299,21 @@ function ProfileScreen({   user, displayName, setDisplayName,
                         />
                     </label>
 
+                    <label className="button upload-button">
+                        {isUploadingAvatar ? "Uploading image..." : "Upload profile image"}
+                        <input
+                            className="file-input"
+                            type="file"
+                            accept="image/png,image/jpeg,image/gif,image/webp"
+                            disabled={isUploadingAvatar}
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (file) onAvatarUpload(file);
+                                event.target.value = "";
+                            }}
+                        />
+                    </label>
+
                     <label className="stack">
                         <span>Status</span>
                         <input
@@ -311,7 +331,7 @@ function ProfileScreen({   user, displayName, setDisplayName,
                         />
                     </label>
 
-                    {error && <p className="error">{error}</p>}
+                    {(error || uploadError) && <p className="error">{error ?? uploadError}</p>}
 
                     <div className="profile-actions">
                         <button type="button" className="button" onClick={onBack}>
@@ -360,6 +380,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
     const [editingDraft, setEditingDraft] = useState("");
+    const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
 
     const composerRef = useRef<HTMLInputElement | null>(null);
     const messagesRef = useRef<HTMLElement | null>(null);
@@ -462,11 +483,16 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         return new Map(entries);
     }, [usersQuery.data]);
 
+    const messagesById = useMemo(() => {
+        return new Map((messagesQuery.data ?? []).map((message) => [message.id, message]));
+    }, [messagesQuery.data]);
+
     const roomPassPanelRoom = useMemo(() => rooms.find((room) => room.id === roomPassPanelRoomId) ?? null, [rooms, roomPassPanelRoomId]);
 
     const ROOM_PASS_RE = /starbyte:\/\/\d{4}-\d{4}/i;
-    const URL_TOKEN_RE = /^https?:\/\/[^\s<]+$/i;
-    const EMBED_URL_RE = /\b(?:https?:\/\/[^\s<]+|starbyte:\/\/\d{4}-\d{4})/gi;
+    const URL_TOKEN_RE = /^(?:https?:\/\/[^\s<]+|\/api\/uploads\/images\/[^\s<]+)$/i;
+    const EMBED_URL_RE = /(?:https?:\/\/[^\s<]+|\/api\/uploads\/images\/[^\s<]+|starbyte:\/\/\d{4}-\d{4})/gi;
+    const UPLOADED_IMAGE_RE = /^\/api\/uploads\/images\/[a-f0-9-]+\.(?:png|jpg|gif|webp)$/i;
 
     useSocket(Boolean(meQuery.data?.user));
     const [draft, setDraft] = useState("");
@@ -501,13 +527,31 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         }
     });
 
+    const uploadProfileImageMutation = useMutation({
+        mutationFn: (file: File) => uploadImage(file),
+        onSuccess: (data) => {
+            setProfileAvatarUrl(data.url);
+        }
+    });
+
+    const uploadChatImageMutation = useMutation({
+        mutationFn: (file: File) => uploadImage(file),
+        onSuccess: (data) => {
+            setDraft((current) => current.trim() ? `${current.trim()} ${data.url}` : data.url);
+            requestAnimationFrame(() => composerRef.current?.focus());
+        }
+    });
+
     const sendMutation = useMutation({
         mutationFn: async () => {
             if (!activeThread) {
                 throw new Error("Pick a thread first");
             }
 
-            return sendMessage(activeThread.id, { body: draft.trim() });
+            return sendMessage(activeThread.id, {
+                body: draft.trim(),
+                replyToMessageId: replyingToMessage?.id ?? null
+            });
         },
         onSuccess: async (data) => {
             if (!activeThread) return;
@@ -517,6 +561,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             setMentionQuery("");
             setMentionStart(null);
             setSelectedMentionIndex(0);
+            setReplyingToMessage(null);
 
             queryClient.setQueryData(
                 ["messages", activeThread.id],
@@ -813,6 +858,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     useEffect(() => {
         setEditingMessageId(null);
         setEditingDraft("");
+        setReplyingToMessage(null);
     }, [activeThread?.id]);
 
     useEffect(() => {
@@ -904,7 +950,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 return (
                     <a
                         key={index}
-                        href={part}
+                        href={mediaUrl(part)}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-link"
@@ -1012,6 +1058,14 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 {embed.title && <strong className="link-embed-title">{embed.title}</strong>}
                 {embed.description && <div className="link-embed-desc">{embed.description}</div>}
                 {embed.imageUrl && <img src={embed.imageUrl} alt="" className="embed-image" />}
+            </a>
+        );
+    }
+
+    function MessageAttachment({url}: { url: string }) {
+        return (
+            <a className="uploaded-image" href={mediaUrl(url)} target="_blank" rel="noreferrer">
+                <img src={mediaUrl(url)} alt="Uploaded attachment" />
             </a>
         );
     }
@@ -1211,6 +1265,19 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 behavior: "smooth",
                 block: "center"
             });
+        });
+    }
+
+    function startReplyingToMessage(message: Message) {
+        setReplyingToMessage(message);
+        setMessageContextMenu(null);
+        requestAnimationFrame(() => composerRef.current?.focus());
+    }
+
+    function scrollToMessage(messageId: string) {
+        messageRefs.current[messageId]?.scrollIntoView({
+            behavior: "smooth",
+            block: "center"
         });
     }
 
@@ -1536,10 +1603,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                     setBio={setProfileBio}
                     statusText={profileStatusText}
                     setStatusText={setProfileStatusText}
+                    onAvatarUpload={(file) => uploadProfileImageMutation.mutate(file)}
+                    isUploadingAvatar={uploadProfileImageMutation.isPending}
                     onBack={() => setScreen("thread")}
                     onSave={handleProfileSave}
                     isSaving={updateProfileMutation.isPending}
                     error={updateProfileMutation.error ? (updateProfileMutation.error as Error).message : undefined}
+                    uploadError={uploadProfileImageMutation.error ? (uploadProfileImageMutation.error as Error).message : undefined}
                 />
             ) : (
                 <main className="thread-panel">
@@ -1602,6 +1672,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                     const urls = extractUrls(message.body);
                                     const isEditing = editingMessageId === message.id;
                                     const isOwnMessage = message.userId === meQuery.data?.user.id;
+                                    const repliedTo = message.replyToMessageId ? messagesById.get(message.replyToMessageId) : null;
 
                                     return (
                                         <article
@@ -1614,7 +1685,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                 grouped ? "message-line-grouped" : ""
                                             ].filter(Boolean).join(" ")}
                                             onContextMenu={(event) => {
-                                                if (!isOwnMessage) return;
                                                 event.preventDefault();
                                                 setMessageContextMenu({
                                                     message,
@@ -1662,6 +1732,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                                             value={editingDraft}
                                                                             onChange={(event) => setEditingDraft(event.target.value)}
                                                                             onKeyDown={(event) => {
+                                                                                if (event.key === "Enter" && editingDraft.trim() && !updateMessageMutation.isPending) {
+                                                                                    event.preventDefault();
+                                                                                    updateMessageMutation.mutate();
+                                                                                }
                                                                                 if (event.key === "Escape") {
                                                                                     event.preventDefault();
                                                                                     cancelEditingMessage();
@@ -1692,28 +1766,51 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                                     </div>
                                                                 ) : (
                                                                     <>
+                                                                        {message.replyToMessageId && (
+                                                                            <button
+                                                                                type="button"
+                                                                                className="message-reply-reference"
+                                                                                onClick={() => repliedTo && scrollToMessage(repliedTo.id)}
+                                                                                disabled={!repliedTo}
+                                                                            >
+                                                                                {repliedTo
+                                                                                    ? `Replying to @${repliedTo.username}: ${repliedTo.body.slice(0, 80)}`
+                                                                                    : "Original message unavailable"}
+                                                                            </button>
+                                                                        )}
                                                                         <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
 
                                                                         {urls.map((url) => (
-                                                                            <MessageEmbed
-                                                                                key={url}
-                                                                                url={url}
-                                                                                onJoinRoomPass={joinFromRoomPass}
-                                                                            />
+                                                                            UPLOADED_IMAGE_RE.test(url) ? (
+                                                                                <MessageAttachment key={url} url={url} />
+                                                                            ) : (
+                                                                                <MessageEmbed
+                                                                                    key={url}
+                                                                                    url={url}
+                                                                                    onJoinRoomPass={joinFromRoomPass}
+                                                                                />
+                                                                            )
                                                                         ))}
                                                                     </>
                                                                 )}
                                                             </div>
 
-                                                            {isOwnMessage && !isEditing ? (
+                                                            {!isEditing ? (
                                                                 <div className="message-actions">
                                                                     <button
+                                                                        type="button"
+                                                                        className="message-inline-action"
+                                                                        onClick={() => startReplyingToMessage(message)}
+                                                                    >
+                                                                        Reply
+                                                                    </button>
+                                                                    {isOwnMessage && <button
                                                                         type="button"
                                                                         className="message-inline-action"
                                                                         onClick={() => startEditingMessage(message)}
                                                                     >
                                                                         Edit
-                                                                    </button>
+                                                                    </button>}
                                                                 </div>
                                                             ) : (
                                                                 <div className="message-actions-placeholder" />
@@ -1726,19 +1823,81 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                     <span className="message-prefix">&gt;</span>
 
                                                     <div className="stack message-content">
-                                                        <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
-
-                                                        {urls.map((url) => (
-                                                            <MessageEmbed
-                                                                key={url}
-                                                                url={url}
-                                                                onJoinRoomPass={joinFromRoomPass}
-                                                            />
-                                                        ))}
+                                                        {isEditing ? (
+                                                            <div className="message-edit-inline">
+                                                                <input
+                                                                    value={editingDraft}
+                                                                    onChange={(event) => setEditingDraft(event.target.value)}
+                                                                    onKeyDown={(event) => {
+                                                                        if (event.key === "Enter" && editingDraft.trim() && !updateMessageMutation.isPending) {
+                                                                            event.preventDefault();
+                                                                            updateMessageMutation.mutate();
+                                                                        }
+                                                                        if (event.key === "Escape") {
+                                                                            event.preventDefault();
+                                                                            cancelEditingMessage();
+                                                                        }
+                                                                    }}
+                                                                    autoFocus
+                                                                />
+                                                                <div className="message-inline-actions message-inline-actions-visible">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="button button-primary"
+                                                                        onClick={() => updateMessageMutation.mutate()}
+                                                                        disabled={updateMessageMutation.isPending || !editingDraft.trim()}
+                                                                    >
+                                                                        {updateMessageMutation.isPending ? "Saving..." : "Save"}
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="button"
+                                                                        onClick={cancelEditingMessage}
+                                                                        disabled={updateMessageMutation.isPending}
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                {message.replyToMessageId && (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="message-reply-reference"
+                                                                        onClick={() => repliedTo && scrollToMessage(repliedTo.id)}
+                                                                        disabled={!repliedTo}
+                                                                    >
+                                                                        {repliedTo
+                                                                            ? `Replying to @${repliedTo.username}: ${repliedTo.body.slice(0, 80)}`
+                                                                            : "Original message unavailable"}
+                                                                    </button>
+                                                                )}
+                                                                <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
+                                                                {urls.map((url) => (
+                                                                    UPLOADED_IMAGE_RE.test(url) ? (
+                                                                        <MessageAttachment key={url} url={url} />
+                                                                    ) : (
+                                                                        <MessageEmbed
+                                                                            key={url}
+                                                                            url={url}
+                                                                            onJoinRoomPass={joinFromRoomPass}
+                                                                        />
+                                                                    )
+                                                                ))}
+                                                            </>
+                                                        )}
                                                     </div>
 
-                                                    {isOwnMessage ? (
-                                                        <div className="message-actions">
+                                                    {!isEditing ? <div className="message-actions">
+                                                        <button
+                                                            type="button"
+                                                            className="message-inline-action"
+                                                            onClick={() => startReplyingToMessage(message)}
+                                                        >
+                                                            Reply
+                                                        </button>
+                                                        {isOwnMessage && (
                                                             <button
                                                                 type="button"
                                                                 className="message-inline-action"
@@ -1746,10 +1905,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                             >
                                                                 Edit
                                                             </button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="message-actions-placeholder" />
-                                                    )}
+                                                        )}
+                                                    </div> : <div className="message-actions-placeholder" />}
                                                 </div>
                                             )}
                                         </article>
@@ -1758,6 +1915,16 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             </section>
 
                             <form className="composer" onSubmit={handleSend}>
+                                {replyingToMessage && (
+                                    <div className="composer-context">
+                                        <span>
+                                            Replying to <strong>@{replyingToMessage.username}</strong>: {replyingToMessage.body.slice(0, 90)}
+                                        </span>
+                                        <button type="button" className="message-inline-action" onClick={() => setReplyingToMessage(null)}>
+                                            Cancel
+                                        </button>
+                                    </div>
+                                )}
                                 <input
                                     ref={composerRef}
                                     value={draft}
@@ -1822,10 +1989,25 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                     </div>
                                 )}
 
+                                <label className="button attachment-button">
+                                    {uploadChatImageMutation.isPending ? "Uploading..." : "Image"}
+                                    <input
+                                        className="file-input"
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/gif,image/webp"
+                                        disabled={uploadChatImageMutation.isPending}
+                                        onChange={(event) => {
+                                            const file = event.target.files?.[0];
+                                            if (file) uploadChatImageMutation.mutate(file);
+                                            event.target.value = "";
+                                        }}
+                                    />
+                                </label>
                                 <button className="button button-primary" disabled={sendMutation.isPending || !activeThread}>
                                     Send
                                 </button>
                                 {sendMutation.error && <p className="error">{(sendMutation.error as Error).message}</p>}
+                                {uploadChatImageMutation.error && <p className="error">{(uploadChatImageMutation.error as Error).message}</p>}
                             </form>
                         </>
                     )}
@@ -1947,27 +2129,41 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                         type="button"
                         className="context-menu-item"
                         onClick={() => {
-                            startEditingMessage(messageContextMenu.message);
-                            setMessageContextMenu(null);
+                            startReplyingToMessage(messageContextMenu.message);
                         }}
                     >
-                        Edit Message
+                        Reply
                     </button>
 
-                    <button
-                        type="button"
-                        className="context-menu-item context-menu-item-danger"
-                        onClick={async () => {
-                            if (!activeThread) return;
+                    {messageContextMenu.message.userId === meQuery.data?.user.id && (
+                        <>
+                            <button
+                                type="button"
+                                className="context-menu-item"
+                                onClick={() => {
+                                    startEditingMessage(messageContextMenu.message);
+                                    setMessageContextMenu(null);
+                                }}
+                            >
+                                Edit Message
+                            </button>
 
-                            await deleteMessageMutation.mutateAsync({
-                                threadId: activeThread.id,
-                                messageId: messageContextMenu.message.id
-                            });
-                        }}
-                    >
-                        Delete Message
-                    </button>
+                            <button
+                                type="button"
+                                className="context-menu-item context-menu-item-danger"
+                                onClick={async () => {
+                                    if (!activeThread) return;
+
+                                    await deleteMessageMutation.mutateAsync({
+                                        threadId: activeThread.id,
+                                        messageId: messageContextMenu.message.id
+                                    });
+                                }}
+                            >
+                                Delete Message
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -2152,8 +2348,84 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 </div>
             )}
 
-            {!IS_DESKTOP_BUILD && <PwaPrompt />}
+            {!IS_TAURI && <PwaPrompt />}
         </div>
+    );
+}
+
+function DesktopTitlebar() {
+    async function withWindow(action: (window: import("@tauri-apps/api/window").Window) => Promise<unknown>) {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await action(getCurrentWindow());
+    }
+
+    return (
+        <header
+            className="desktop-titlebar"
+            data-tauri-drag-region
+        >
+            <strong data-tauri-drag-region>star_byte</strong>
+            <div className="desktop-window-controls" onDoubleClick={(event) => event.stopPropagation()}>
+                <button
+                    type="button"
+                    aria-label="Minimize"
+                    title="Minimize"
+                    onClick={() => void withWindow((window) => window.minimize())}
+                >
+                    -
+                </button>
+                <button
+                    type="button"
+                    aria-label="Maximize"
+                    title="Maximize"
+                    onClick={() => void withWindow((window) => window.toggleMaximize())}
+                >
+                    []
+                </button>
+                <button
+                    type="button"
+                    className="desktop-window-close"
+                    aria-label="Close"
+                    title="Close"
+                    onClick={() => void withWindow((window) => window.close())}
+                >
+                    x
+                </button>
+            </div>
+        </header>
+    );
+}
+
+function DesktopResizeHandles() {
+    const directions = [
+        "North",
+        "NorthEast",
+        "East",
+        "SouthEast",
+        "South",
+        "SouthWest",
+        "West",
+        "NorthWest"
+    ] as const;
+
+    async function startResize(direction: typeof directions[number]) {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await getCurrentWindow().startResizeDragging(direction);
+    }
+
+    return (
+        <>
+            {directions.map((direction) => (
+                <div
+                    key={direction}
+                    className={`window-resize-handle window-resize-${direction.toLowerCase()}`}
+                    onMouseDown={(event) => {
+                        if (event.button === 0) void startResize(direction);
+                    }}
+                    aria-hidden="true"
+                />
+            ))}
+        </>
     );
 }
 
@@ -2179,7 +2451,7 @@ export default function App() {
         return () => window.removeEventListener("starbyte-auth-invalid", handleAuthInvalid);
     }, []);
 
-    return hasToken ? (
+    const content = hasToken ? (
         <ThreadShell
             onLogout={() => setHasToken(false)}
             theme={theme}
@@ -2187,5 +2459,15 @@ export default function App() {
         />
     ) : (
         <AuthScreen onAuthenticated={() => setHasToken(true)} />
+    );
+
+    if (!IS_TAURI) return content;
+
+    return (
+        <div className="tauri-frame">
+            <DesktopResizeHandles />
+            <DesktopTitlebar />
+            <div className="tauri-content">{content}</div>
+        </div>
     );
 }

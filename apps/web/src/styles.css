@@ -553,7 +553,7 @@ strong {
 .composer {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--border-strong);
@@ -616,6 +616,34 @@ strong {
 
 .composer input {
   min-width: 0;
+}
+
+.composer-context {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.composer .error {
+  grid-column: 1 / -1;
+}
+
+.file-input {
+  display: none;
+}
+
+.upload-button,
+.attachment-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .muted {
@@ -1100,6 +1128,7 @@ strong {
   display: flex;
   justify-self: end;
   align-items: start;
+  gap: 4px;
 }
 
 .message-actions-placeholder {
@@ -1129,4 +1158,199 @@ strong {
 .message-inline-actions-visible {
   opacity: 1;
   pointer-events: auto;
+}
+
+.message-reply-reference {
+  width: fit-content;
+  max-width: 100%;
+  border: none;
+  border-left: 2px solid var(--accent);
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 7px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.message-reply-reference:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.uploaded-image {
+  display: block;
+  width: fit-content;
+  max-width: min(520px, 100%);
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  padding: 4px;
+}
+
+.uploaded-image img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.tauri-frame {
+  position: relative;
+  height: 100vh;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+}
+
+.tauri-content {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tauri-content > .shell,
+.tauri-content > .centered {
+  height: 100%;
+  min-height: 0;
+}
+
+.tauri-content .thread-panel {
+  height: 100%;
+}
+
+.desktop-titlebar {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 12px;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 100;
+}
+
+.desktop-window-controls {
+  display: flex;
+  align-self: stretch;
+}
+
+.desktop-window-controls button {
+  width: 46px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.desktop-window-controls button:hover {
+  background: var(--button-hover);
+}
+
+.desktop-window-controls .desktop-window-close:hover {
+  background: var(--danger);
+}
+
+.window-resize-handle {
+  position: absolute;
+  z-index: 200;
+}
+
+.window-resize-north,
+.window-resize-south {
+  left: 7px;
+  right: 7px;
+  height: 6px;
+}
+
+.window-resize-east,
+.window-resize-west {
+  top: 7px;
+  bottom: 7px;
+  width: 6px;
+}
+
+.window-resize-north {
+  top: 0;
+  cursor: n-resize;
+}
+
+.window-resize-south {
+  bottom: 0;
+  cursor: s-resize;
+}
+
+.window-resize-east {
+  right: 0;
+  cursor: e-resize;
+}
+
+.window-resize-west {
+  left: 0;
+  cursor: w-resize;
+}
+
+.window-resize-northeast,
+.window-resize-northwest,
+.window-resize-southeast,
+.window-resize-southwest {
+  width: 9px;
+  height: 9px;
+}
+
+.window-resize-northeast {
+  top: 0;
+  right: 0;
+  cursor: ne-resize;
+}
+
+.window-resize-northwest {
+  top: 0;
+  left: 0;
+  cursor: nw-resize;
+}
+
+.window-resize-southeast {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+
+.window-resize-southwest {
+  bottom: 0;
+  left: 0;
+  cursor: sw-resize;
+}
+
+@media (max-width: 900px) {
+  .shell.shell-rooms {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(210px, 38vh) minmax(0, 1fr);
+    height: 100%;
+  }
+
+  .shell-rooms .sidebar {
+    max-height: none;
+    min-height: 0;
+  }
+
+  .shell-rooms .thread-panel {
+    height: auto;
+    min-height: 0;
+  }
+
+  .room-grid-box {
+    max-height: 110px;
+  }
 }

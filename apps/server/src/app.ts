@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
+import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import { DatabaseService } from "./lib/db.js";
 import { NoopIrcBridge } from "./lib/ircBridge.js";
@@ -13,6 +14,7 @@ import { notificationRoutes } from "./routes/notifications.js";
 import { roomRoutes } from "./routes/rooms.js";
 import { embedRoutes } from "./routes/embeds.js";
 import { whisperRoutes } from "./routes/whispers.js";
+import { uploadRoutes } from "./routes/uploads.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -56,6 +58,12 @@ export async function buildApp() {
     secret: jwtSecret
   });
 
+  await app.register(multipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024,
+      files: 1
+    }
+  });
   await app.register(websocket);
   await registerAuthPlugin(app);
 
@@ -67,6 +75,7 @@ export async function buildApp() {
   await app.register(notificationRoutes, { prefix: "/api/notifications" });
   await app.register(embedRoutes, { prefix: "/api" });
   await app.register(whisperRoutes, { prefix: "/api" });
+  await app.register(uploadRoutes, { prefix: "/api" });
 
 
   app.addHook("onClose", async () => {

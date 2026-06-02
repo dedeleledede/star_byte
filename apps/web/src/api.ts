@@ -90,6 +90,11 @@ const WS_BASE_URL = (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, 
 function apiUrl(path: string) {return `${API_BASE_URL}${path}`;}
 function wsUrl(path: string) {return `${WS_BASE_URL}${path}`;}
 
+export function mediaUrl(url?: string | null) {
+  if (!url) return "";
+  return url.startsWith("/api/uploads/") ? apiUrl(url) : url;
+}
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -112,8 +117,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   };
 
   const hasBody = init?.body !== undefined && init?.body !== null;
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
 
-  if (hasBody && !headers["Content-Type"]) {
+  if (hasBody && !isFormData && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
 
@@ -154,9 +160,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       "invalid room pass": "Room Pass inválido ou expirado.",
       "thread not found": "Thread não encontrada.",
       "message not found": "Mensagem não encontrada.",
+      "invalid reply target": "A mensagem respondida não está mais disponível.",
       "roomId is required": "Escolha uma Room antes de criar uma Thread.",
       "cannot whisper yourself": "Você não pode iniciar um Whisper consigo mesmo.",
-      "target user not found": "Usuário não encontrado."
+      "target user not found": "Usuário não encontrado.",
+      "image required": "Escolha uma imagem para enviar.",
+      "invalid image type": "Envie uma imagem PNG, JPG, GIF ou WebP.",
+      "image too large": "A imagem deve ter no máximo 5 MB."
     };
 
     if (response.status >= 500) {
@@ -200,6 +210,16 @@ export function updateMe(input: {
   return request<{ user: User }>("/api/auth/me", {
     method: "PATCH",
     body: JSON.stringify(input)
+  });
+}
+
+export function uploadImage(file: File) {
+  const formData = new FormData();
+  formData.append("image", file);
+
+  return request<{ url: string }>("/api/uploads/images", {
+    method: "POST",
+    body: formData
   });
 }
 

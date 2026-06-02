@@ -194,6 +194,13 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(403).send({ error: "forbidden" });
     }
 
+    if (parsed.data.replyToMessageId) {
+      const repliedTo = app.db.getMessageById(parsed.data.replyToMessageId);
+      if (!repliedTo || repliedTo.threadId !== params.data.threadId) {
+        return reply.code(400).send({ error: "invalid reply target" });
+      }
+    }
+
     const message = app.db.createMessage({
       threadId: params.data.threadId,
       userId: request.currentUser!.id,
