@@ -1,0 +1,15 @@
+{
+  "version": "0.1.1",
+  "notes": "Release notes shown before the user installs the update.",
+  "pub_date": "2026-06-02T00:00:00.000Z",
+  "platforms": {
+    "linux-x86_64": {
+      "url": "https://constellation.servebeer.com/releases/star_byte/0.1.1/star_byte_0.1.1_amd64.AppImage",
+      "signature": "replace-with-generated-signature"
+    },
+    "windows-x86_64": {
+      "url": "https://constellation.servebeer.com/releases/star_byte/0.1.1/star_byte_0.1.1_x64-setup.nsis.zip",
+      "signature": "replace-with-generated-signature"
+    }
+  }
+}

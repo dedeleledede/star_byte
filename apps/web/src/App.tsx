@@ -45,6 +45,7 @@ import {
 } from "./api";
 import { useSocket } from "./hooks/useSocket";
 import { PwaPrompt } from "./components/PwaPrompt";
+import { DesktopUpdater } from "./components/DesktopUpdater";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 
@@ -1438,6 +1439,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                           >
                               Edit profile
                           </button>
+
+                          {IS_TAURI && <DesktopUpdater />}
 
                           <button
                               className="button"

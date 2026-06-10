@@ -347,6 +347,18 @@ strong {
   border-top: 1px solid var(--border);
 }
 
+.desktop-updater {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.desktop-updater p {
+  margin: 0;
+}
+
 .sidebar-tools {
   display: grid;
   gap: 8px;

@@ -16,6 +16,7 @@ import { roomRoutes } from "./routes/rooms.js";
 import { embedRoutes } from "./routes/embeds.js";
 import { whisperRoutes } from "./routes/whispers.js";
 import { uploadRoutes } from "./routes/uploads.js";
+import { desktopUpdateRoutes } from "./routes/desktopUpdates.js";
 
 export async function buildApp() {
   const trustProxy = process.env.TRUST_PROXY === "true";
@@ -49,13 +50,16 @@ export async function buildApp() {
         return;
       }
 
-      const allowed = new Set([clientOrigin]);
+      const allowed = new Set([
+        clientOrigin,
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost"
+      ]);
 
       if (!isProduction) {
         allowed.add("http://localhost:5173");
         allowed.add("http://127.0.0.1:5173");
-        allowed.add("http://tauri.localhost");
-        allowed.add("https://tauri.localhost");
       }
 
       callback(null, allowed.has(origin));
@@ -89,6 +93,7 @@ export async function buildApp() {
   await app.register(embedRoutes, { prefix: "/api" });
   await app.register(whisperRoutes, { prefix: "/api" });
   await app.register(uploadRoutes, { prefix: "/api" });
+  await app.register(desktopUpdateRoutes, { prefix: "/api" });
 
 
   app.addHook("onClose", async () => {

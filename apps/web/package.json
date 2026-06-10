@@ -8,14 +8,18 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "dev:tauri": "vite --mode tauri",
-    "build:tauri": "tsc && vite build --mode tauri",
+    "build:tauri": "node scripts/build-desktop.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:linux": "NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 tauri build --bundles appimage,deb",
+    "tauri:build:windows": "tauri build --bundles nsis"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.87.1",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
