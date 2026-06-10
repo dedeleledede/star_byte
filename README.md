@@ -2,7 +2,12 @@
 
 Private desktop-first community chat built with Fastify, SQLite, React, Vite, and Tauri.
 
-The constellation server is authoritative for users, Rooms, Room Passes, Threads, Whispers, messages, uploads, embeds, notifications, and desktop update metadata. The Tauri application is a client shell. Do not bundle the Fastify server or SQLite database into installers.
+star_byte has two release targets:
+
+- `starbyte-server`: constellation backend for hosts/admins. It owns auth, Rooms, Room Passes, Threads, Sections compatibility data, Whispers, Messages, uploads, notifications, release metadata, update artifacts, and SQLite source-of-truth data.
+- `starbyte-client`: Tauri desktop client for Windows/Linux users. It contains React UI assets and the Tauri shell, connects to constellation over HTTPS/WSS, and must not bundle the Fastify server or SQLite database.
+
+The React frontend exists because Tauri uses web assets. star_byte is not intended to be primarily a public web app.
 
 ## Features
 
@@ -62,7 +67,8 @@ PORT=3001
 TRUST_PROXY=true
 JWT_SECRET=replace-with-a-long-random-secret
 CLIENT_ORIGIN=https://chat.example.com
-DB_PATH=/var/lib/star-byte/starbyte.db
+DB_PATH=/var/lib/starbyte/starbyte.db
+STARBYTE_RELEASES_DIR=/var/lib/starbyte/releases
 ```
 
 Build the browser frontend with:
@@ -103,7 +109,7 @@ server {
     }
 
     location /releases/ {
-        alias /var/lib/star-byte/releases/;
+        alias /var/lib/starbyte/releases/;
     }
 
     location /ws {
@@ -129,22 +135,24 @@ Set `TRUST_PROXY=true` only when Fastify is reachable exclusively through your t
 
 ## SQLite Persistence And Backups
 
-`DB_PATH` must point to persistent storage. Uploaded images are stored in an `uploads` directory next to the SQLite database, so back up both paths.
+`DB_PATH` must point to persistent storage. Uploaded images are stored in an `uploads` directory next to the SQLite database, and release artifacts are stored in `STARBYTE_RELEASES_DIR`, so back up all three paths. See `docs/server-install.md` for the full install, update, backup, restore, and rollback process.
 
 Example backup:
 
 ```bash
-mkdir -p /var/backups/star-byte
-sqlite3 /var/lib/star-byte/starbyte.db \
-  ".backup '/var/backups/star-byte/starbyte-$(date +%F-%H%M%S).db'"
-cp -a /var/lib/star-byte/uploads /var/backups/star-byte/uploads
+mkdir -p /var/backups/starbyte
+sqlite3 /var/lib/starbyte/starbyte.db \
+  ".backup '/var/backups/starbyte/starbyte-$(date +%F-%H%M%S).db'"
+cp -a /var/lib/starbyte/uploads /var/backups/starbyte/uploads
+cp -a /var/lib/starbyte/releases /var/backups/starbyte/releases
 ```
 
 Example restore:
 
 ```bash
-cp /var/backups/star-byte/starbyte-YYYY-MM-DD-HHMMSS.db /var/lib/star-byte/starbyte.db
-cp -a /var/backups/star-byte/uploads /var/lib/star-byte/uploads
+cp /var/backups/starbyte/starbyte-YYYY-MM-DD-HHMMSS.db /var/lib/starbyte/starbyte.db
+cp -a /var/backups/starbyte/uploads /var/lib/starbyte/uploads
+cp -a /var/backups/starbyte/releases /var/lib/starbyte/releases
 ```
 
 Stop the server before restoring. Test restore procedures before inviting users.
@@ -169,7 +177,7 @@ apps/web/src-tauri/target/release/bundle/deb/
 apps/web/src-tauri/target/release/bundle/nsis/
 ```
 
-The repository workflow `.github/workflows/desktop-release.yml` runs `npm ci`, `npm run build`, and the platform-specific Tauri build on Linux and Windows runners. It uploads the generated bundle directories as CI artifacts. See `docs/release-desktop.md` for the full release process.
+The repository workflow `.github/workflows/desktop-release.yml` runs `npm ci`, `npm run build`, and the platform-specific Tauri build on Linux and Windows runners. It uploads the generated bundle directories as CI artifacts. See `docs/client-release.md` for the full client release process.
 
 ## Signed Desktop Updates
 
@@ -179,7 +187,7 @@ The Tauri updater checks constellation without requiring login:
 GET /api/desktop/updates/:target/:arch/:currentVersion
 ```
 
-The server reads update metadata from `DESKTOP_RELEASES_MANIFEST`, or from `releases/latest.json` beside `DB_PATH` by default. Copy `apps/server/desktop-releases.example.json` to persistent storage and update it when publishing a release. Installer archives live under `/var/lib/star-byte/releases`; never store binaries or signing keys in SQLite.
+The server reads update metadata from `DESKTOP_RELEASES_MANIFEST`, or from `STARBYTE_RELEASES_DIR/latest.json` by default. Copy `apps/server/desktop-releases.example.json` to persistent storage and update it when publishing a release. Installer archives live under `/var/lib/starbyte/releases`; never store binaries or signing keys in SQLite.
 
 The public updater key is committed in `apps/web/src-tauri/tauri.conf.json`. Store the private key content or its path only in the deployment secret `TAURI_SIGNING_PRIVATE_KEY`. If the key is password-protected, also set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Losing the private key prevents existing clients from accepting future updates.
 
@@ -197,7 +205,7 @@ Back up both values in an encrypted secret store before removing the temporary f
 1. Update the version in `apps/web/src-tauri/tauri.conf.json`, `apps/web/src-tauri/Cargo.toml`, `apps/web/package.json`, and the root `package.json`.
 2. Run the `desktop-release` workflow with `TAURI_SIGNING_PRIVATE_KEY` configured as a CI secret.
 3. Download the Linux `AppImage` and `.deb`, Windows NSIS `.exe`, and generated `.sig` files from the workflow artifacts.
-4. Upload installers and updater artifacts to `/var/lib/star-byte/releases/star_byte/<version>/` on constellation.
+4. Upload installers and updater artifacts to `/var/lib/starbyte/releases/star_byte/<version>/` on constellation.
 5. Update the persistent `releases/latest.json` using `apps/server/desktop-releases.example.json` as the shape. Use the updater artifact URLs and generated `.sig` contents.
 6. For the first release, create a normal Room named `system` and a Thread named `star_byte updates`. Post release notes there from the Host account for every release.
 7. Smoke test from an older installed client: check for updates in the account menu, install, restart, log in, confirm the displayed version, confirm WebSocket connection, and send a message.

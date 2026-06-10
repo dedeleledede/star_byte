@@ -52,8 +52,10 @@ export const desktopUpdateRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: "invalid update request" });
     }
 
+    const releasesDir = process.env.STARBYTE_RELEASES_DIR ??
+      join(dirname(process.env.DB_PATH ?? "./data/starbyte.db"), "releases");
     const manifestPath = process.env.DESKTOP_RELEASES_MANIFEST ??
-      join(dirname(process.env.DB_PATH ?? "./data/starbyte.db"), "releases", "latest.json");
+      join(releasesDir, "latest.json");
 
     let manifest;
     try {

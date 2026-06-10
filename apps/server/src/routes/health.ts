@@ -4,7 +4,7 @@ export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get("/health", async () => {
     return {
       ok: true,
-      service: "star-byte-server"
+      service: "starbyte-server"
     };
   });
 };

@@ -1,0 +1,191 @@
+# starbyte-client Release
+
+`starbyte-client` is the Tauri desktop app installed by normal Windows and Linux users. It contains React UI assets and the Tauri shell, connects to constellation over HTTPS/WSS, and receives signed updates through the Tauri updater.
+
+The client installer must not bundle the Fastify server, SQLite database, uploads, or source-of-truth Room/User/Thread/Whisper/Message data. Local client storage is limited to client state such as auth token, theme, window state, and temporary cache.
+
+## Version Bump
+
+Update the release version in:
+
+- `package.json`
+- `apps/web/package.json`
+- `apps/web/src-tauri/tauri.conf.json`
+- `apps/web/src-tauri/Cargo.toml`
+
+Keep Tauri metadata stable:
+
+- `productName`: `star_byte`
+- `identifier`: `com.zavan.starbyte`
+
+## Release Environment
+
+Desktop production builds must point to constellation, not localhost:
+
+```dotenv
+VITE_API_BASE_URL=https://starbyte.example.com
+VITE_WS_BASE_URL=wss://starbyte.example.com
+```
+
+You can also set:
+
+```dotenv
+STARBYTE_DOMAIN=starbyte.example.com
+```
+
+The build scripts derive the HTTPS and WSS URLs from `STARBYTE_DOMAIN`. Release builds reject localhost, `.local`, non-HTTPS API URLs, and non-WSS WebSocket URLs.
+
+## Signing
+
+Signed updates are required. The public updater key is committed in `apps/web/src-tauri/tauri.conf.json`. The private signing key must never be committed.
+
+Required secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, if the key is password-protected
+
+Generate a keypair when bootstrapping updater signing:
+
+```bash
+cd apps/web
+npm run tauri -- signer generate -w ~/.tauri/star_byte-updater.key
+```
+
+Store the private key and password in GitHub Secrets and an encrypted operational secret store.
+
+## Build Installers
+
+Install dependencies and compile the repository:
+
+```bash
+npm ci
+npm run build
+```
+
+Build Linux AppImage and `.deb` on Linux:
+
+```bash
+npm run tauri:build:linux --workspace @starbyte/web
+```
+
+Build Windows NSIS installer on Windows:
+
+```powershell
+npm run tauri:build:windows --workspace @starbyte/web
+```
+
+The generic wrapper accepts Tauri build flags and injects the updater endpoint:
+
+```bash
+npm run tauri:build --workspace @starbyte/web -- --bundles appimage,deb
+```
+
+Expected artifact directories:
+
+```text
+apps/web/src-tauri/target/release/bundle/appimage/
+apps/web/src-tauri/target/release/bundle/deb/
+apps/web/src-tauri/target/release/bundle/nsis/
+```
+
+Expected outputs:
+
+- Windows: NSIS `.exe`
+- Linux: `.AppImage`
+- Linux: `.deb`
+- Updater signatures: generated `.sig` files
+
+## GitHub Actions
+
+`.github/workflows/desktop-release.yml` builds Linux and Windows client artifacts. Configure either:
+
+- repository variable `STARBYTE_DOMAIN`
+- repository variables `VITE_API_BASE_URL` and `VITE_WS_BASE_URL`
+
+Configure secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, when needed
+
+The workflow uploads bundle directories as CI artifacts. For MVP, download those artifacts and upload them manually to constellation.
+
+## Publish Client Updates
+
+Upload release artifacts to the `starbyte-server` release directory:
+
+```text
+/var/lib/starbyte/releases/
+  latest.json
+  star_byte/0.1.1/
+    star_byte_0.1.1_amd64.AppImage
+    star_byte_0.1.1_amd64.AppImage.sig
+    star_byte_0.1.1_amd64.deb
+    star_byte_0.1.1_x64-setup.exe
+    star_byte_0.1.1_x64-setup.exe.sig
+```
+
+Do not store these binaries in SQLite.
+
+Update `/var/lib/starbyte/releases/latest.json`:
+
+```json
+{
+  "version": "0.1.1",
+  "notes": "Release notes shown before the user installs the update.",
+  "pub_date": "2026-06-10T00:00:00.000Z",
+  "platforms": {
+    "linux-x86_64": {
+      "url": "https://starbyte.example.com/releases/star_byte/0.1.1/star_byte_0.1.1_amd64.AppImage",
+      "signature": "contents-of-AppImage.sig"
+    },
+    "windows-x86_64": {
+      "url": "https://starbyte.example.com/releases/star_byte/0.1.1/star_byte_0.1.1_x64-setup.exe",
+      "signature": "contents-of-setup-exe.sig"
+    }
+  }
+}
+```
+
+The update endpoint is public because update checks may happen before login:
+
+```text
+GET /api/desktop/updates/:target/:arch/:currentVersion
+```
+
+It reads `STARBYTE_RELEASES_DIR/latest.json` by default and returns `204 No Content` when no update is available.
+
+## In-App Update Check
+
+Users open the account/settings menu and click `Check for updates`.
+
+Expected UI states:
+
+- current version is visible
+- `star_byte is up to date.` when no update exists
+- `Update available` with version and release notes when a newer signed update exists
+- `Install update`
+- `Later`
+
+There is no silent forced install.
+
+## User-Facing Release Notes
+
+MVP release notes are posted as normal messages:
+
+1. Create a Room named `system`.
+2. Create a Thread named `star_byte updates`.
+3. Host/Admin posts release notes there before publishing `latest.json`.
+
+This keeps release notes server-backed and avoids adding client-side source-of-truth data.
+
+## Smoke Test
+
+From an older installed client:
+
+1. Log in.
+2. Confirm Room list loads from constellation.
+3. Send a message and confirm WebSocket delivery.
+4. Open account/settings and click `Check for updates`.
+5. Confirm version and notes appear.
+6. Click `Install update`.
+7. Confirm the app relaunches into the new version.

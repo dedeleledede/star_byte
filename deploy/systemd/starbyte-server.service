@@ -1,0 +1,21 @@
+[Unit]
+Description=starbyte-server constellation backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=starbyte
+Group=starbyte
+WorkingDirectory=/opt/starbyte/server
+EnvironmentFile=/etc/starbyte/starbyte.env
+ExecStart=/usr/bin/npm run start --workspace @starbyte/server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/starbyte /var/backups/starbyte
+
+[Install]
+WantedBy=multi-user.target
