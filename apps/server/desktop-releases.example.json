@@ -8,7 +8,7 @@
       "signature": "replace-with-generated-signature"
     },
     "windows-x86_64": {
-      "url": "https://constellation.servebeer.com/releases/star_byte/0.1.1/star_byte_0.1.1_x64-setup.nsis.zip",
+      "url": "https://constellation.servebeer.com/releases/star_byte/0.1.1/star_byte_0.1.1_x64-setup.exe",
       "signature": "replace-with-generated-signature"
     }
   }

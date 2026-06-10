@@ -11,9 +11,9 @@
     "build:tauri": "node scripts/build-desktop.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
-    "tauri:build:linux": "NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 tauri build --bundles appimage,deb",
-    "tauri:build:windows": "tauri build --bundles nsis"
+    "tauri:build": "node scripts/tauri-build.mjs",
+    "tauri:build:linux": "NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 node scripts/tauri-build.mjs --bundles appimage,deb",
+    "tauri:build:windows": "node scripts/tauri-build.mjs --bundles nsis"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.87.1",

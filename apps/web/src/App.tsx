@@ -492,7 +492,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     const ROOM_PASS_RE = /starbyte:\/\/\d{4}-\d{4}/i;
     const URL_TOKEN_RE = /^(?:https?:\/\/[^\s<]+|\/api\/uploads\/images\/[^\s<]+)$/i;
-    const EMBED_URL_RE = /(?:https?:\/\/[^\s<]+|\/api\/uploads\/images\/[^\s<]+|starbyte:\/\/\d{4}-\d{4})/gi;
+    const EMBED_URL_RE = /https?:\/\/[^\s<]+|\/api\/uploads\/images\/[^\s<]+|starbyte:\/\/\d{4}-\d{4}/gi;
     const UPLOADED_IMAGE_RE = /^\/api\/uploads\/images\/[a-f0-9-]+\.(?:png|jpg|gif|webp)$/i;
 
     useSocket(Boolean(meQuery.data?.user));

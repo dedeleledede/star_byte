@@ -42,14 +42,14 @@ npm run build:tauri --workspace @starbyte/web
 cd apps/web/src-tauri && cargo check
 ```
 
-`build:tauri` always injects the production desktop endpoints from `apps/web/.env.desktop-production`:
+`build:tauri` injects the production desktop endpoints from environment variables or `apps/web/.env.desktop-production`:
 
 ```dotenv
 VITE_API_BASE_URL=https://constellation.servebeer.com
 VITE_WS_BASE_URL=wss://constellation.servebeer.com
 ```
 
-It fails if those endpoints do not use HTTPS/WSS on constellation. Desktop release assets never fall back to localhost.
+It fails if those endpoints do not use HTTPS/WSS or point at localhost. Desktop release assets never fall back to localhost.
 
 ## Production Environment
 
@@ -169,7 +169,7 @@ apps/web/src-tauri/target/release/bundle/deb/
 apps/web/src-tauri/target/release/bundle/nsis/
 ```
 
-The repository workflow `.github/workflows/desktop-release.yml` runs `npm ci`, `npm run build`, and the platform-specific Tauri build on Linux and Windows runners. It uploads the generated bundle directories as CI artifacts.
+The repository workflow `.github/workflows/desktop-release.yml` runs `npm ci`, `npm run build`, and the platform-specific Tauri build on Linux and Windows runners. It uploads the generated bundle directories as CI artifacts. See `docs/release-desktop.md` for the full release process.
 
 ## Signed Desktop Updates
 
@@ -179,7 +179,7 @@ The Tauri updater checks constellation without requiring login:
 GET /api/desktop/updates/:target/:arch/:currentVersion
 ```
 
-The server reads update metadata from `DESKTOP_RELEASES_MANIFEST`, or from `desktop-releases.json` beside `DB_PATH` by default. Copy `apps/server/desktop-releases.example.json` to persistent storage and update it when publishing a release. Installer archives live under `/var/lib/star-byte/releases`; never store binaries or signing keys in SQLite.
+The server reads update metadata from `DESKTOP_RELEASES_MANIFEST`, or from `releases/latest.json` beside `DB_PATH` by default. Copy `apps/server/desktop-releases.example.json` to persistent storage and update it when publishing a release. Installer archives live under `/var/lib/star-byte/releases`; never store binaries or signing keys in SQLite.
 
 The public updater key is committed in `apps/web/src-tauri/tauri.conf.json`. Store the private key content or its path only in the deployment secret `TAURI_SIGNING_PRIVATE_KEY`. If the key is password-protected, also set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Losing the private key prevents existing clients from accepting future updates.
 
@@ -197,8 +197,8 @@ Back up both values in an encrypted secret store before removing the temporary f
 1. Update the version in `apps/web/src-tauri/tauri.conf.json`, `apps/web/src-tauri/Cargo.toml`, `apps/web/package.json`, and the root `package.json`.
 2. Run the `desktop-release` workflow with `TAURI_SIGNING_PRIVATE_KEY` configured as a CI secret.
 3. Download the Linux `AppImage` and `.deb`, Windows NSIS `.exe`, and generated `.sig` files from the workflow artifacts.
-4. Upload installers and updater archives to `/var/lib/star-byte/releases/star_byte/<version>/` on constellation.
-5. Update the persistent `desktop-releases.json` using `apps/server/desktop-releases.example.json` as the shape. Use the updater archive URLs and generated `.sig` contents.
+4. Upload installers and updater artifacts to `/var/lib/star-byte/releases/star_byte/<version>/` on constellation.
+5. Update the persistent `releases/latest.json` using `apps/server/desktop-releases.example.json` as the shape. Use the updater artifact URLs and generated `.sig` contents.
 6. For the first release, create a normal Room named `system` and a Thread named `star_byte updates`. Post release notes there from the Host account for every release.
 7. Smoke test from an older installed client: check for updates in the account menu, install, restart, log in, confirm the displayed version, confirm WebSocket connection, and send a message.
 

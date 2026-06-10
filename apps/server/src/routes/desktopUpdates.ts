@@ -53,7 +53,7 @@ export const desktopUpdateRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const manifestPath = process.env.DESKTOP_RELEASES_MANIFEST ??
-      join(dirname(process.env.DB_PATH ?? "./data/starbyte.db"), "desktop-releases.json");
+      join(dirname(process.env.DB_PATH ?? "./data/starbyte.db"), "releases", "latest.json");
 
     let manifest;
     try {

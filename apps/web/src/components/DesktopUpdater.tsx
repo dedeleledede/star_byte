@@ -54,8 +54,13 @@ export function DesktopUpdater() {
 
       {availableUpdate && (
         <div className="desktop-update-available stack">
-          <strong>Update {availableUpdate.version} is available.</strong>
-          {availableUpdate.body && <p className="muted">{availableUpdate.body}</p>}
+          <strong>Update available: {availableUpdate.version}</strong>
+          {availableUpdate.body && (
+            <div>
+              <div className="muted">Release notes</div>
+              <p className="muted">{availableUpdate.body}</p>
+            </div>
+          )}
           <div className="profile-actions">
             <button className="button button-primary" type="button" onClick={() => void installUpdate()} disabled={isInstalling}>
               {isInstalling ? "Installing..." : "Install update"}
