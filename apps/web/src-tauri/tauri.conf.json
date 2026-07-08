@@ -38,7 +38,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ5QjVCQUZCQUE4RUQ2ODAKUldTQTFvNnErN3ExMlUrNlVCcXA4Z1VmaWtENnZIOHFYS2d0blBpNTd0dkJQbEdQdjFQakxXaWkK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRCMzUwNTY3MjdBNzZCMjAKUldRZ2E2Y25ad1UxUzdVeG10Q29GektCb1NCM2M5Y0dVRnJjTXpvWGxUQ29mUFlER1lua3NodEgK",
       "endpoints": [
         "https://constellation.servebeer.com/api/desktop/updates/{{target}}/{{arch}}/{{current_version}}"
       ],
