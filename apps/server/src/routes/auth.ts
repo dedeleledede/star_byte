@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { emitToAllConnectedUsers } from "../lib/realtime.js";
 
 const registerSchema = z.object({
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
@@ -118,7 +119,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const { displayName, avatarUrl, bio, statusText } = parsed.data;
-    const userId = request.user.sub;
+    const userId = request.currentUser!.id;
 
     const user = app.db.updateUserProfile({
       userId,
@@ -131,6 +132,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!user) {
       return reply.code(404).send({ error: "user not found" });
     }
+
+    emitToAllConnectedUsers(app, "user.profile.updated", { user });
 
     return { user };
   });

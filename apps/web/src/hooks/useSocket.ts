@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getToken, type Message } from "../api";
+import { getToken, type Message, type User } from "../api";
 
 const WS_BASE_URL = (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, "") || "";
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
@@ -29,7 +29,12 @@ export function useSocket(enabled: boolean) {
     socket.onmessage = (event) => {
       if (event.data === "pong") return;
 
-      const payload = JSON.parse(event.data);
+      let payload: { type?: string; data?: unknown };
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
 
       if (payload.type === "message.created") {
         const message = payload.data as Message;
@@ -69,6 +74,26 @@ export function useSocket(enabled: boolean) {
         const data = payload.data as { threadId: string; roomId: string };
         void queryClient.invalidateQueries({ queryKey: ["threads", data.roomId] });
         queryClient.removeQueries({ queryKey: ["messages", data.threadId] });
+      }
+
+      if (payload.type === "room.members.changed") {
+        const data = payload.data as { roomId: string; userId: string };
+        void queryClient.invalidateQueries({ queryKey: ["room-users", data.roomId] });
+        void queryClient.invalidateQueries({ queryKey: ["thread-members"] });
+      }
+
+      if (payload.type === "user.profile.updated") {
+        const data = payload.data as { user: User };
+        queryClient.setQueryData<{ user: User }>(
+          ["me"],
+          (current) => current?.user.id === data.user.id ? { user: data.user } : current
+        );
+        void queryClient.invalidateQueries({ queryKey: ["users"] });
+        void queryClient.invalidateQueries({ queryKey: ["room-users"] });
+        void queryClient.invalidateQueries({ queryKey: ["thread-members"] });
+        void queryClient.invalidateQueries({ queryKey: ["messages"] });
+        void queryClient.invalidateQueries({ queryKey: ["mention-notifications"] });
+        void queryClient.invalidateQueries({ queryKey: ["whispers"] });
       }
     };
 

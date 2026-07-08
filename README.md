@@ -179,6 +179,8 @@ apps/web/src-tauri/target/release/bundle/nsis/
 
 The repository workflow `.github/workflows/desktop-release.yml` runs `npm ci`, `npm run build`, and the platform-specific Tauri build on Linux and Windows runners. It uploads the generated bundle directories as CI artifacts. See `docs/client-release.md` for the full client release process.
 
+For Arch Linux native packaging and AppImage WebKit/EGL investigation notes, see `docs/linux-packaging.md`. For RAM measurement methodology, see `docs/memory-measurement.md`.
+
 ## Signed Desktop Updates
 
 The Tauri updater checks constellation without requiring login:

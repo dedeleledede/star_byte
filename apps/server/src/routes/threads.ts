@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { emitToUsers } from "../lib/realtime.js";
 
 const createThreadSchema = z.object({
   title: z.string().min(1).max(60),
@@ -21,20 +22,9 @@ function extractMentionUsernames(body: string) {
 }
 
 export const threadRoutes: FastifyPluginAsync = async (app) => {
-  function emitToUsers(userIds: string[], type: string, data: unknown) {
-    const payload = JSON.stringify({ type, data });
-
-    for (const userId of new Set(userIds)) {
-      for (const socket of app.wsClients.get(userId) ?? []) {
-        if (socket.readyState === 1) {
-          socket.send(payload);
-        }
-      }
-    }
-  }
-
   function emitToThreadMembers(threadId: string, type: string, data: unknown) {
     emitToUsers(
+      app,
       app.db.listMembersForThread(threadId).map((member) => member.id),
       type,
       data
@@ -166,7 +156,7 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
           mentionedByUserId: request.currentUser!.id,
           mentionedUserIds: [...new Set(matchedUserIds)]
         });
-        emitToUsers(matchedUserIds, "mention.created", { threadId: params.data.threadId });
+        emitToUsers(app, matchedUserIds, "mention.created", { threadId: params.data.threadId });
       }
     }
 
@@ -227,7 +217,7 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
           mentionedByUserId: request.currentUser!.id,
           mentionedUserIds: [...new Set(matchedUserIds)]
         });
-        emitToUsers(matchedUserIds, "mention.created", { threadId: params.data.threadId });
+        emitToUsers(app, matchedUserIds, "mention.created", { threadId: params.data.threadId });
       }
     }
 

@@ -4,10 +4,11 @@ import { VitePWA } from "vite-plugin-pwa";
 
 const host = process.env.TAURI_DEV_HOST;
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     VitePWA({
+      disable: mode === "desktop-production",
       registerType: "prompt",
       includeAssets: ["sb_logo.svg", "pwa-192x192.png", "pwa-512x512.png"],
       manifest: {
@@ -64,4 +65,4 @@ export default defineConfig({
     },
     allowedHosts: true
   }
-});
+}));

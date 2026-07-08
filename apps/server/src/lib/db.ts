@@ -658,10 +658,12 @@ export class DatabaseService {
   }
 
   addMemberToRoom(roomId: string, userId: string, role: string) {
-    this.db.prepare(`
+    const result = this.db.prepare(`
       INSERT OR IGNORE INTO room_members (room_id, user_id, role)
       VALUES (?, ?, ?)
     `).run(roomId, userId, role);
+
+    return result.changes > 0;
   }
 
   isRoomMember(roomId: string, userId: string) {
@@ -747,7 +749,8 @@ export class DatabaseService {
         input.userId
     );
 
-    return this.findUserById(input.userId);
+    const user = this.findUserById(input.userId);
+    return user ? this.toSafeUser(user) : undefined;
   }
 
   listWhispersForUser(userId: string) {

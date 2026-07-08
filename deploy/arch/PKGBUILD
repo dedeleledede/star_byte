@@ -1,0 +1,45 @@
+# Maintainer: star_byte maintainers
+pkgname=star_byte
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="star_byte Tauri desktop client"
+arch=("x86_64")
+url="https://github.com/dedeleledede/star_byte"
+license=("MIT")
+depends=(
+  "webkit2gtk-4.1"
+  "gtk3"
+  "libayatana-appindicator"
+  "openssl"
+  "libsoup3"
+  "hicolor-icon-theme"
+)
+makedepends=(
+  "nodejs"
+  "npm"
+  "rust"
+)
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/../.."
+  npm ci
+  npm run build
+  npm run tauri:build --workspace @starbyte/web -- --no-bundle
+}
+
+package() {
+  cd "$startdir/../.."
+
+  install -Dm755 apps/web/src-tauri/target/release/app "$pkgdir/usr/lib/star_byte/star_byte"
+  install -d "$pkgdir/usr/bin"
+  ln -s /usr/lib/star_byte/star_byte "$pkgdir/usr/bin/star_byte"
+
+  install -Dm644 deploy/linux/star_byte.desktop "$pkgdir/usr/share/applications/star_byte.desktop"
+  install -Dm644 apps/web/src-tauri/icons/32x32.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/star_byte.png"
+  install -Dm644 apps/web/src-tauri/icons/64x64.png "$pkgdir/usr/share/icons/hicolor/64x64/apps/star_byte.png"
+  install -Dm644 apps/web/src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/star_byte.png"
+  install -Dm644 apps/web/src-tauri/icons/128x128@2x.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/star_byte.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/star_byte/LICENSE"
+}

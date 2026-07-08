@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=star_byte
+Comment=Private desktop community chat
+Exec=star_byte
+Icon=star_byte
+Terminal=false
+Categories=Network;Chat;

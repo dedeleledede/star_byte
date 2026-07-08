@@ -46,3 +46,32 @@ jobs:
           name: starbyte-client-${{ runner.os }}
           path: |
             apps/web/src-tauri/target/release/bundle/**
+
+  arch-package:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    env:
+      STARBYTE_DOMAIN: ${{ vars.STARBYTE_DOMAIN }}
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      VITE_WS_BASE_URL: ${{ vars.VITE_WS_BASE_URL }}
+      NO_STRIP: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Arch build dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm git nodejs npm rust webkit2gtk-4.1 gtk3 libayatana-appindicator openssl libsoup3 hicolor-icon-theme libarchive
+
+      - name: Build Arch-native client package
+        run: |
+          npm ci
+          npm run build
+          npm run tauri:build --workspace @starbyte/web -- --no-bundle
+          STARBYTE_VERSION="$(node -p "require('./package.json').version")" node deploy/arch/package-arch.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starbyte-client-Arch
+          path: artifacts/arch/*.pkg.tar.zst

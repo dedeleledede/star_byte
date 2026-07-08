@@ -85,6 +85,7 @@ export interface LinkEmbed {
 
 const TOKEN_KEY = "star_byte.token";
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
+const REQUEST_TIMEOUT_MS = 30000;
 
 function apiUrl(path: string) {return `${API_BASE_URL}${path}`;}
 
@@ -121,14 +122,38 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers["Content-Type"] = "application/json";
   }
 
+  const url = apiUrl(path);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response: Response;
   try {
-    response = await fetch(apiUrl(path), {
+    response = await fetch(url, {
       ...init,
-      headers
+      headers,
+      signal: controller.signal
     });
-  } catch {
+  } catch (error) {
+    const isAbort = error instanceof DOMException && error.name === "AbortError";
+
+    if ((import.meta as any).env?.DEV) {
+      console.warn("[star_byte] API request failed before HTTP response", {
+        url,
+        method: init?.method ?? "GET",
+        origin: window.location.origin,
+        apiBaseUrl: API_BASE_URL || "(same-origin)",
+        kind: isAbort ? "timeout" : "network-or-cors",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+
+    if (isAbort) {
+      throw new Error("O servidor demorou para responder. Tente novamente.");
+    }
+
     throw new Error("Não foi possível conectar ao servidor. Verifique sua conexão.");
+  } finally {
+    window.clearTimeout(timeout);
   }
 
   const text = await response.text();

@@ -1,5 +1,6 @@
 import type {FastifyPluginAsync, FastifyReply, FastifyRequest} from "fastify";
 import { z } from "zod";
+import { emitToRoomMembers } from "../lib/realtime.js";
 const createRoomSchema = z.object({
     name: z.string().min(1).max(60),
 });
@@ -117,7 +118,14 @@ export const roomRoutes: FastifyPluginAsync = async (app) => {
             return reply.code(404).send({ error: "invalid room pass" });
         }
 
-        app.db.addMemberToRoom(room.id, request.currentUser!.id, "member");
+        const added = app.db.addMemberToRoom(room.id, request.currentUser!.id, "member");
+
+        if (added) {
+            emitToRoomMembers(app, room.id, "room.members.changed", {
+                roomId: room.id,
+                userId: request.currentUser!.id
+            });
+        }
 
         return { room };
     });

@@ -527,8 +527,20 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 statusText: profileStatusText
             });
         },
-        onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ["me"] });
+        onSuccess: async (data) => {
+            queryClient.setQueryData(["me"], data);
+            setProfileDisplayName(data.user.displayName);
+            setProfileAvatarUrl(data.user.avatarUrl ?? "");
+            setProfileBio(data.user.bio ?? "");
+            setProfileStatusText(data.user.statusText ?? "");
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["users"] }),
+                queryClient.invalidateQueries({ queryKey: ["room-users"] }),
+                queryClient.invalidateQueries({ queryKey: ["thread-members"] }),
+                queryClient.invalidateQueries({ queryKey: ["messages"] }),
+                queryClient.invalidateQueries({ queryKey: ["mention-notifications"] }),
+                queryClient.invalidateQueries({ queryKey: ["whispers"] })
+            ]);
             setScreen("thread");
         }
     });

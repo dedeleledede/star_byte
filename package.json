@@ -10,7 +10,8 @@
     "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev -w @starbyte/server\" \"npm run dev -w @starbyte/web\"",
     "dev:server": "npm run dev -w @starbyte/server",
     "dev:web": "npm run dev -w @starbyte/web",
-    "build": "npm run build -w @starbyte/server && npm run build -w @starbyte/web"
+    "build": "npm run build -w @starbyte/server && npm run build -w @starbyte/web",
+    "test": "npm run test -w @starbyte/server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

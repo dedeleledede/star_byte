@@ -2,19 +2,10 @@ import { spawnSync } from "node:child_process";
 import { loadDesktopReleaseEnv, npxCommand } from "./desktop-env.mjs";
 
 const releaseEnv = await loadDesktopReleaseEnv();
-const tauriConfig = {
-  plugins: {
-    updater: {
-      endpoints: [releaseEnv.STARBYTE_DESKTOP_UPDATER_ENDPOINT]
-    }
-  }
-};
 
 const args = [
   "tauri",
   "build",
-  "--config",
-  JSON.stringify(tauriConfig),
   ...process.argv.slice(2)
 ];
 
