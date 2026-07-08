@@ -64,6 +64,17 @@ export async function buildApp() {
 
       callback(null, allowed.has(origin));
     },
+
+    methods: [
+      "GET",
+      "HEAD",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS"
+    ],
+
     credentials: true
   });
 
