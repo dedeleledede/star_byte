@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "prompt",
-      includeAssets: ["favicon.svg"],
+      includeAssets: ["sb_logo.svg", "pwa-192x192.png", "pwa-512x512.png"],
       manifest: {
         name: "star_byte",
         short_name: "starbyte",
@@ -19,6 +19,12 @@ export default defineConfig({
         display: "standalone",
         start_url: "/",
         icons: [
+          {
+            src: "/sb_logo.svg",
+            sizes: "any",
+            type: "image/svg+xml",
+            purpose: "any"
+          },
           {
             src: "/pwa-192x192.png",
             sizes: "192x192",

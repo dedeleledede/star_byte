@@ -116,8 +116,13 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     return (
         <div className="centered">
             <div className="auth-card">
-                <h1>star_byte</h1>
-                <p className="muted">Private IRC-based community thread</p>
+                <div className="brand-lockup">
+                    <img src="/sb_logo.svg" alt="" className="brand-logo" />
+                    <div>
+                        <h1>star_byte</h1>
+                        <p className="muted">Private IRC-based community thread</p>
+                    </div>
+                </div>
 
                 <div className="mode-toggle">
                   <button
@@ -2367,7 +2372,10 @@ function DesktopTitlebar() {
             className="desktop-titlebar"
             data-tauri-drag-region
         >
-            <strong data-tauri-drag-region>star_byte</strong>
+            <strong className="desktop-titlebar-brand" data-tauri-drag-region>
+                <img src="/sb_logo.svg" alt="" />
+                <span>star_byte</span>
+            </strong>
             <div className="desktop-window-controls" onDoubleClick={(event) => event.stopPropagation()}>
                 <button
                     type="button"

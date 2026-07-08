@@ -228,9 +228,27 @@ strong {
 }
 
 .auth-card h1 {
+  margin: 0;
   font-size: 20px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.brand-logo {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+}
+
+.brand-lockup p {
+  margin: 4px 0 0;
 }
 
 .stack {
@@ -677,6 +695,18 @@ strong {
   border: 1px solid var(--border-strong);
   border-radius: 0;
   box-shadow: var(--shadow);
+}
+
+.pwa-toast-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pwa-toast-logo {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
 }
 
 .pwa-actions {
@@ -1250,6 +1280,17 @@ strong {
   user-select: none;
   -webkit-user-select: none;
   z-index: 100;
+}
+
+.desktop-titlebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.desktop-titlebar-brand img {
+  width: 22px;
+  height: 22px;
 }
 
 .desktop-window-controls {

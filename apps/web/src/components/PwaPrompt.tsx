@@ -13,8 +13,11 @@ export function PwaPrompt() {
 
   return (
     <div className="pwa-toast">
-      <div>
-        {needRefresh ? "An update is ready over Wi-Fi or web reconnect." : "App is ready for offline use."}
+      <div className="pwa-toast-copy">
+        <img src="/sb_logo.svg" alt="" className="pwa-toast-logo" />
+        <div>
+          {needRefresh ? "An update is ready over Wi-Fi or web reconnect." : "App is ready for offline use."}
+        </div>
       </div>
 
       <div className="pwa-actions">
