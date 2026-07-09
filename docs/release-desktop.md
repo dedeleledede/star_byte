@@ -23,6 +23,18 @@ It contains no source-of-truth Room/User/Thread/Whisper/Message database. It may
 
 Use [client-release.md](./client-release.md) for Windows/Linux installer builds, signing, updater metadata, artifact publishing, and client smoke tests.
 
+## Release Model
+
+Pushes to `main` are CI-only for desktop release purposes. They must not create a GitHub Release, edit constellation `latest.json`, or update installed clients.
+
+Server deploy and desktop release are separate operations:
+
+- Backend deploy: run the server deploy script manually on constellation.
+- Desktop test build: run the `desktop-release` workflow manually and inspect Actions artifacts.
+- Desktop release: bump version, push matching `vMAJOR.MINOR.PATCH` tag, let GitHub create the Release, then explicitly publish from constellation after smoke testing.
+
+The GitHub Release is not the updater activation point. Installed clients receive an update only after `/var/lib/starbyte/releases/latest.json` is atomically updated by the constellation-side publisher.
+
 ## Boundaries
 
 - Do not use Electron.
@@ -31,3 +43,5 @@ Use [client-release.md](./client-release.md) for Windows/Linux installer builds,
 - Do not erase, recreate, or reset the live database.
 - Any database change must be incremental and compatible with the current live DB.
 - Store installer binaries and updater artifacts in `/var/lib/starbyte/releases`, not SQLite.
+- Never give GitHub Actions SSH access to constellation for automatic deploys.
+- Never overwrite artifacts for a version that has already been published.

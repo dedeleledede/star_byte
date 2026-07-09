@@ -2,17 +2,45 @@ name: desktop-release
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            bundles: appimage,deb
-          - os: windows-latest
-            bundles: nsis
-    runs-on: ${{ matrix.os }}
+  verify:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run version:check
+      - run: npm test
+      - run: npm run build
+
+      - id: version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          node scripts/validate-release-tag.mjs "$TAG_VERSION"
+
+  linux:
+    needs: verify
+    runs-on: ubuntu-22.04
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -32,22 +60,59 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux bundle dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - run: npm ci
-      - run: npm run build
-      - run: npm run tauri:build --workspace @starbyte/web -- --bundles ${{ matrix.bundles }}
+      - run: npm run tauri:build --workspace @starbyte/web -- --bundles appimage,deb
+      - run: node scripts/stage-desktop-assets.mjs linux "${{ needs.verify.outputs.version }}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: starbyte-client-${{ runner.os }}
-          path: |
-            apps/web/src-tauri/target/release/bundle/**
+          name: starbyte-release-linux
+          path: artifacts/release/*
 
-  arch-package:
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starbyte-debug-linux
+          path: apps/web/src-tauri/target/release/bundle/**
+
+  windows:
+    needs: verify
+    runs-on: windows-latest
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      STARBYTE_DOMAIN: ${{ vars.STARBYTE_DOMAIN }}
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      VITE_WS_BASE_URL: ${{ vars.VITE_WS_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm ci
+      - run: npm run tauri:build --workspace @starbyte/web -- --bundles nsis
+      - run: node scripts/stage-desktop-assets.mjs windows "${{ needs.verify.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starbyte-release-windows
+          path: artifacts/release/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starbyte-debug-windows
+          path: apps/web/src-tauri/target/release/bundle/**
+
+  arch:
+    needs: verify
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
@@ -64,14 +129,61 @@ jobs:
           pacman -Syu --noconfirm
           pacman -S --noconfirm git nodejs npm rust webkit2gtk-4.1 gtk3 libayatana-appindicator openssl libsoup3 hicolor-icon-theme libarchive
 
-      - name: Build Arch-native client package
-        run: |
-          npm ci
-          npm run build
-          npm run tauri:build --workspace @starbyte/web -- --no-bundle
-          STARBYTE_VERSION="$(node -p "require('./package.json').version")" node deploy/arch/package-arch.mjs
+      - run: npm ci
+      - run: npm run tauri:build --workspace @starbyte/web -- --no-bundle
+      - run: STARBYTE_VERSION="${{ needs.verify.outputs.version }}" node deploy/arch/package-arch.mjs
+      - run: node scripts/stage-desktop-assets.mjs arch "${{ needs.verify.outputs.version }}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: starbyte-client-Arch
-          path: artifacts/arch/*.pkg.tar.zst
+          name: starbyte-release-arch
+          path: artifacts/release/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - verify
+      - linux
+      - windows
+      - arch
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: starbyte-release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Validate release assets
+        run: |
+          VERSION="${{ needs.verify.outputs.version }}"
+          expected=(
+            "star_byte_${VERSION}_x64-setup.exe"
+            "star_byte_${VERSION}_x64-setup.exe.sig"
+            "star_byte_${VERSION}_portable_x64.zip"
+            "star_byte_${VERSION}_amd64.AppImage"
+            "star_byte_${VERSION}_amd64.AppImage.sig"
+            "star_byte_${VERSION}_amd64.deb"
+            "star_byte-${VERSION}-1-x86_64.pkg.tar.zst"
+          )
+          for asset in "${expected[@]}"; do
+            test -s "release-assets/$asset" || {
+              echo "Missing required release asset: $asset" >&2
+              exit 1
+            }
+          done
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.verify.outputs.version }}"
+          gh release create "$GITHUB_REF_NAME" \
+            release-assets/* \
+            --title "star_byte ${VERSION}" \
+            --generate-notes

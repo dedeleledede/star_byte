@@ -11,7 +11,10 @@
     "dev:server": "npm run dev -w @starbyte/server",
     "dev:web": "npm run dev -w @starbyte/web",
     "build": "npm run build -w @starbyte/server && npm run build -w @starbyte/web",
-    "test": "npm run test -w @starbyte/server"
+    "test": "node --test scripts/*.test.mjs && npm run test -w @starbyte/server",
+    "version:set": "node scripts/set-version.mjs",
+    "version:check": "node scripts/check-version.mjs",
+    "release:status": "node deploy/release/publish-from-github.mjs --status"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

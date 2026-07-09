@@ -99,14 +99,41 @@ Set `TRUST_PROXY=true` only when the Fastify server is reachable exclusively thr
 
 Do not wipe `/var/lib/starbyte`. Server startup runs the existing incremental DB ensure logic and must be allowed to preserve current data.
 
+Backend deployment is manual on constellation. It is not triggered by GitHub Actions and does not change the desktop client version or `/var/lib/starbyte/releases/latest.json`.
+
+Install the deploy wrapper once:
+
+```bash
+sudo install -m 755 /opt/starbyte/server/deploy/server/deploy-server.sh /opt/starbyte/deploy-server.sh
+```
+
+Deploy current `main` on constellation:
+
+```bash
+sudo /opt/starbyte/deploy-server.sh
+```
+
+The script:
+
+1. Backs up `/var/lib/starbyte` and selected persistent data to `/var/backups/starbyte`.
+2. Runs `git pull --ff-only` in `/opt/starbyte/server`.
+3. Runs `npm ci`.
+4. Runs `npm run test --workspace @starbyte/server`.
+5. Runs `npm run build --workspace @starbyte/server`.
+6. Restarts `starbyte-server`.
+7. Checks `curl -fsS http://127.0.0.1:3001/health`.
+
+Manual equivalent:
+
 1. Back up `/var/lib/starbyte` and `/etc/starbyte/starbyte.env`.
 2. Pull the new code or deploy the new release to `/opt/starbyte/server`.
 3. Run `npm ci`.
-4. Run `npm run build --workspace @starbyte/server`.
-5. Restart with `sudo systemctl restart starbyte-server`.
-6. Check `curl -fsS http://127.0.0.1:3001/health`.
-7. Smoke test login, Room list, message send, image upload, notification, and WebSocket reconnect.
-8. Keep the backup until the release is verified.
+4. Run `npm run test --workspace @starbyte/server`.
+5. Run `npm run build --workspace @starbyte/server`.
+6. Restart with `sudo systemctl restart starbyte-server`.
+7. Check `curl -fsS http://127.0.0.1:3001/health`.
+8. Smoke test login, Room list, message send, image upload, notification, and WebSocket reconnect.
+9. Keep the backup until the release is verified.
 
 Rollback is the same process in reverse: stop the service, restore the previous code build, restore data only if the bad release modified data incorrectly, then restart and smoke test. Prefer code rollback without data restore when the database is healthy.
 
