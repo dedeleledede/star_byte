@@ -20,8 +20,6 @@ The product is desktop-first. The web frontend exists because Tauri renders web 
 - Connects to the configured starbyte-server over HTTPS/WSS.
 - Does not bundle the Fastify server, server SQLite DB, uploads, or source-of-truth chat data.
 
-Hard lines: no Electron, no bundled server in the client installer, no local client database as source of truth, no destructive DB resets.
-
 ## Stack
 
 - Server: Fastify
