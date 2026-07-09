@@ -1,27 +1,38 @@
-# Star Byte
+# star_byte
 
-Private desktop-first community chat built with Fastify, SQLite, React, Vite, and Tauri.
+Private chat for a closed friend/community network.
 
-star_byte has two release targets:
+The product is desktop-first. The web frontend exists because Tauri renders web assets; normal users should install the Tauri client, not treat this as a public web app.
 
-- `starbyte-server`: constellation backend for hosts/admins. It owns auth, Rooms, Room Passes, Threads, Sections compatibility data, Whispers, Messages, uploads, notifications, release metadata, update artifacts, and SQLite source-of-truth data.
-- `starbyte-client`: Tauri desktop client for Windows/Linux users. It contains React UI assets and the Tauri shell, connects to constellation over HTTPS/WSS, and must not bundle the Fastify server or SQLite database.
+## Targets
 
-The React frontend exists because Tauri uses web assets. star_byte is not intended to be primarily a public web app.
+`starbyte-server`
 
-## Features
+- Fastify backend for the host/admin deployment.
+- Owns auth, users, rooms, room passes, threads, whispers, messages, uploads, notifications, release metadata, updater artifacts, and SQLite data.
+- Runs on the server only. Do not ship it to normal users.
+- Must preserve `/var/lib/starbyte` across updates.
 
-- JWT login and registration
-- Rooms, Room Pass invites, Threads, and Whispers
-- Message create, edit, soft delete, replies, and mentions
-- WebSocket updates with polling fallback
-- Profile and chat image uploads
-- Bounded link previews with SSRF protections
-- PWA frontend and optional Tauri desktop window
+`starbyte-client`
 
-## Development
+- Tauri desktop app for Windows and Linux users.
+- Contains the React UI assets and Tauri shell.
+- Connects to the configured starbyte-server over HTTPS/WSS.
+- Does not bundle the Fastify server, server SQLite DB, uploads, or source-of-truth chat data.
 
-Use a current supported Node release. Node 22 LTS is recommended.
+Hard lines: no Electron, no bundled server in the client installer, no local client database as source of truth, no destructive DB resets.
+
+## Stack
+
+- Server: Fastify
+- DB: SQLite via `better-sqlite3`
+- UI: React + Vite
+- Desktop: Tauri v2
+- Updates: Tauri updater with signed artifacts
+
+## Local Development
+
+Use Node 22 LTS.
 
 ```bash
 cp apps/server/.env.example apps/server/.env
@@ -29,36 +40,32 @@ npm install
 npm run dev
 ```
 
-- Backend: `http://localhost:3001`
-- Frontend: `http://localhost:5173`
+Local URLs:
 
-To run the Tauri desktop shell against a development server, start the backend and desktop frontend separately:
+- Server: `http://localhost:3001`
+- Web shell: `http://localhost:5173`
+
+Run the Tauri shell in development:
 
 ```bash
 npm run dev --workspace @starbyte/server
 npm run tauri:dev --workspace @starbyte/web
 ```
 
-## Build
+## Checks
 
 ```bash
+npm run version:check
+npm test
 npm run build
 npm run build:tauri --workspace @starbyte/web
-cd apps/web/src-tauri && cargo check
 ```
 
-`build:tauri` injects the production desktop endpoints from environment variables or `apps/web/.env.desktop-production`:
+`build:tauri` builds desktop web assets with production desktop endpoints. It rejects localhost/non-HTTPS release endpoints.
 
-```dotenv
-VITE_API_BASE_URL=https://constellation.servebeer.com
-VITE_WS_BASE_URL=wss://constellation.servebeer.com
-```
+## Server Production
 
-It fails if those endpoints do not use HTTPS/WSS or point at localhost. Desktop release assets never fall back to localhost.
-
-## Production Environment
-
-Set these server variables explicitly:
+Required production env:
 
 ```dotenv
 NODE_ENV=production
@@ -66,171 +73,218 @@ HOST=127.0.0.1
 PORT=3001
 TRUST_PROXY=true
 JWT_SECRET=replace-with-a-long-random-secret
-CLIENT_ORIGIN=https://chat.example.com
+CLIENT_ORIGIN=https://starbyte.example.com
 DB_PATH=/var/lib/starbyte/starbyte.db
 STARBYTE_RELEASES_DIR=/var/lib/starbyte/releases
 ```
 
-Build the browser frontend with:
+Standard layout:
 
-```dotenv
-VITE_API_BASE_URL=https://chat.example.com
-VITE_WS_BASE_URL=wss://chat.example.com
+```text
+/opt/starbyte/server
+/etc/starbyte/starbyte.env
+/var/lib/starbyte/starbyte.db
+/var/lib/starbyte/uploads
+/var/lib/starbyte/releases
+/var/backups/starbyte
 ```
 
-Production startup rejects missing `DB_PATH`, missing `CLIENT_ORIGIN`, and the default or missing `JWT_SECRET`.
-
-Build and start the server:
+Build/start manually:
 
 ```bash
+npm ci
 npm run build --workspace @starbyte/server
 npm run start --workspace @starbyte/server
 ```
 
+Production startup rejects missing `DB_PATH`, missing `CLIENT_ORIGIN`, and missing/default `JWT_SECRET`.
+
+For install, systemd, backup, restore, and rollback, see [docs/server-install.md](docs/server-install.md).
+
 ## Reverse Proxy
 
-Serve the web build from `apps/web/dist`. Forward `/api/*`, `/ws`, and `/health` to Fastify. WebSocket forwarding must preserve upgrade headers.
-
-Example Nginx configuration:
+Terminate HTTPS at the proxy. Forward API, WebSocket, health, and release files:
 
 ```nginx
-server {
-    listen 443 ssl;
-    server_name chat.example.com;
+location /api/ {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
 
-    root /srv/star-byte/apps/web/dist;
-    index index.html;
+location /ws {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+}
 
-    location /api/ {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+location /health {
+    proxy_pass http://127.0.0.1:3001;
+}
 
-    location /releases/ {
-        alias /var/lib/starbyte/releases/;
-    }
-
-    location /ws {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-
-    location /health {
-        proxy_pass http://127.0.0.1:3001;
-    }
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
+location /releases/ {
+    alias /var/lib/starbyte/releases/;
 }
 ```
 
-Terminate HTTPS at the proxy. Do not expose Fastify directly to the public internet.
-Set `TRUST_PROXY=true` only when Fastify is reachable exclusively through your trusted reverse proxy. This lets rate limits use forwarded client IP addresses safely.
+Set `TRUST_PROXY=true` only when Fastify is reachable only through the trusted proxy.
 
-## SQLite Persistence And Backups
+## Desktop Endpoints
 
-`DB_PATH` must point to persistent storage. Uploaded images are stored in an `uploads` directory next to the SQLite database, and release artifacts are stored in `STARBYTE_RELEASES_DIR`, so back up all three paths. See `docs/server-install.md` for the full install, update, backup, restore, and rollback process.
+Desktop production builds need server URLs:
 
-Example backup:
-
-```bash
-mkdir -p /var/backups/starbyte
-sqlite3 /var/lib/starbyte/starbyte.db \
-  ".backup '/var/backups/starbyte/starbyte-$(date +%F-%H%M%S).db'"
-cp -a /var/lib/starbyte/uploads /var/backups/starbyte/uploads
-cp -a /var/lib/starbyte/releases /var/backups/starbyte/releases
+```dotenv
+VITE_API_BASE_URL=https://starbyte.example.com
+VITE_WS_BASE_URL=wss://starbyte.example.com
 ```
 
-Example restore:
+Or:
 
-```bash
-cp /var/backups/starbyte/starbyte-YYYY-MM-DD-HHMMSS.db /var/lib/starbyte/starbyte.db
-cp -a /var/backups/starbyte/uploads /var/lib/starbyte/uploads
-cp -a /var/backups/starbyte/releases /var/lib/starbyte/releases
+```dotenv
+STARBYTE_DOMAIN=starbyte.example.com
 ```
 
-Stop the server before restoring. Test restore procedures before inviting users.
+Do not hardcode localhost for desktop release builds.
 
-## Desktop Installers
+## Desktop Artifacts
 
-Tauri builds installers without bundling the server or database. Install dependencies with `npm ci`, compile the repository with `npm run build`, then build the platform bundles:
-
-```bash
-# Linux runner
-npm run tauri:build:linux --workspace @starbyte/web
-
-# Windows runner
-npm run tauri:build:windows --workspace @starbyte/web
-```
-
-Generated installers and signed updater artifacts are written below:
+Expected final release asset names:
 
 ```text
-apps/web/src-tauri/target/release/bundle/appimage/
-apps/web/src-tauri/target/release/bundle/deb/
-apps/web/src-tauri/target/release/bundle/nsis/
+star_byte_<version>_x64-setup.exe
+star_byte_<version>_x64-setup.exe.sig
+star_byte_<version>_portable_x64.zip
+star_byte_<version>_amd64.AppImage
+star_byte_<version>_amd64.AppImage.sig
+star_byte_<version>_amd64.deb
+star_byte-<version>-1-x86_64.pkg.tar.zst
 ```
 
-The repository workflow `.github/workflows/desktop-release.yml` runs `npm ci`, `npm run build`, and the platform-specific Tauri build on Linux and Windows runners. It uploads the generated bundle directories as CI artifacts. See `docs/client-release.md` for the full client release process.
+Windows installer: NSIS, per-machine install under `Program Files`.
 
-For Arch Linux native packaging and AppImage WebKit/EGL investigation notes, see `docs/linux-packaging.md`. For RAM measurement methodology, see `docs/memory-measurement.md`.
+Linux installers: AppImage and `.deb`.
 
-## Signed Desktop Updates
+Arch package: native `pkg.tar.zst` using system WebKitGTK.
 
-The Tauri updater checks constellation without requiring login:
+The portable Windows ZIP does not install, does not write to `Program Files`, and is not the updater target.
+
+## Release Flow
+
+Normal push to `main`:
+
+- runs CI;
+- does not create a release;
+- does not publish `latest.json`;
+- does not update clients;
+- does not deploy the server.
+
+Backend deploy:
+
+```bash
+# on the server host
+sudo /opt/starbyte/deploy-server.sh
+```
+
+Desktop test build:
+
+```text
+GitHub Actions -> desktop-release -> Run workflow
+```
+
+This uploads Actions artifacts only. It does not create a GitHub Release and does not update clients.
+
+New desktop release:
+
+```bash
+npm run version:set -- 0.1.1
+npm run version:check
+git commit -am "Release star_byte 0.1.1"
+git tag v0.1.1
+git push
+git push origin v0.1.1
+```
+
+GitHub creates the Release only for a matching tag. The tag version must match the project version.
+
+Publish to clients only after smoke testing:
+
+```bash
+# on the server host
+sudo -u starbyte node /opt/starbyte/server/deploy/release/publish-from-github.mjs 0.1.1 --dry-run
+sudo -u starbyte node /opt/starbyte/server/deploy/release/publish-from-github.mjs 0.1.1
+```
+
+Only the second command updates `/var/lib/starbyte/releases/latest.json`. It downloads into staging, validates artifacts/signatures, promotes files, checks public URLs, then atomically renames `latest.json.tmp` to `latest.json`.
+
+Full details: [docs/client-release.md](docs/client-release.md) and [docs/release-desktop.md](docs/release-desktop.md).
+
+## Updater
+
+Public endpoint:
 
 ```text
 GET /api/desktop/updates/:target/:arch/:currentVersion
 ```
 
-The server reads update metadata from `DESKTOP_RELEASES_MANIFEST`, or from `STARBYTE_RELEASES_DIR/latest.json` by default. Copy `apps/server/desktop-releases.example.json` to persistent storage and update it when publishing a release. Installer archives live under `/var/lib/starbyte/releases`; never store binaries or signing keys in SQLite.
+The backend reads `/var/lib/starbyte/releases/latest.json` by default. If there is no newer version, it returns no update. Installer binaries stay on disk under `/var/lib/starbyte/releases`; they are not stored in SQLite.
 
-The public updater key is committed in `apps/web/src-tauri/tauri.conf.json`. Store the private key content or its path only in the deployment secret `TAURI_SIGNING_PRIVATE_KEY`. If the key is password-protected, also set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Losing the private key prevents existing clients from accepting future updates.
+Updater signing private key must never be committed.
 
-After generating the initial keypair, store the protected private key and password in the repository secrets without printing them:
+Required GitHub Secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, if needed
+
+Required GitHub Variables:
+
+- `STARBYTE_DOMAIN`, or
+- `VITE_API_BASE_URL` and `VITE_WS_BASE_URL`
+
+GitHub Actions does not need SSH access to your server.
+
+## Backups
+
+Back up the DB, uploads, releases, and env file:
 
 ```bash
-gh secret set TAURI_SIGNING_PRIVATE_KEY < /tmp/star_byte-updater.key
-gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD < /tmp/star_byte-updater.password
+sudo sqlite3 /var/lib/starbyte/starbyte.db \
+  ".backup '/var/backups/starbyte/starbyte-$(date +%F-%H%M%S).db'"
+sudo tar -C /var/lib/starbyte -czf /var/backups/starbyte/uploads.tgz uploads
+sudo tar -C /var/lib/starbyte -czf /var/backups/starbyte/releases.tgz releases
 ```
 
-Back up both values in an encrypted secret store before removing the temporary files. The Linux updater metadata should point to the generated `.AppImage`; the `.deb` remains available as an installer. Windows updater metadata should point to the generated NSIS `.exe`.
+Stop the service before restoring. Preserve file ownership and permissions. Treat copied env files as secrets.
 
-## Desktop Release Process
+## Smoke Test
 
-1. Update the version in `apps/web/src-tauri/tauri.conf.json`, `apps/web/src-tauri/Cargo.toml`, `apps/web/package.json`, and the root `package.json`.
-2. Run the `desktop-release` workflow with `TAURI_SIGNING_PRIVATE_KEY` configured as a CI secret.
-3. Download the Linux `AppImage` and `.deb`, Windows NSIS `.exe`, and generated `.sig` files from the workflow artifacts.
-4. Upload installers and updater artifacts to `/var/lib/starbyte/releases/star_byte/<version>/` on constellation.
-5. Update the persistent `releases/latest.json` using `apps/server/desktop-releases.example.json` as the shape. Use the updater artifact URLs and generated `.sig` contents.
-6. For the first release, create a normal Room named `system` and a Thread named `star_byte updates`. Post release notes there from the Host account for every release.
-7. Smoke test from an older installed client: check for updates in the account menu, install, restart, log in, confirm the displayed version, confirm WebSocket connection, and send a message.
-
-The signing key generated during initial setup must be moved from `/tmp/star_byte-updater.key` into the CI/deployment secret store and removed from `/tmp` after that transfer. Never commit it.
-
-## Launch Smoke Test
-
-Run this with two accounts before each release:
+Use two accounts before publishing a desktop update:
 
 1. Register and log in.
-2. Edit profile and upload an avatar.
-3. Create a Room and a Thread.
-4. Generate a Room Pass and join from the second account.
-5. Send, reply to, edit, and delete messages.
-6. Upload a chat image.
-7. Send a mention and confirm the notification.
-8. Create a Whisper.
-9. Reload both clients and confirm session restoration.
-10. Restart the backend and confirm WebSocket reconnection or polling recovery.
+2. Edit profile and avatar.
+3. Create a Room and Text Thread.
+4. Generate a Room Pass and join from a second account.
+5. Confirm members update without reload.
+6. Send, reply, edit, and delete a message.
+7. Upload an image.
+8. Send a mention and check notification.
+9. Create a Whisper.
+10. Restart backend and confirm reconnect.
+11. From an older installed client, check for updates manually.
+12. Confirm version/release notes, then install only after clicking `Install update`.
 
-## Known Deferred Work
+## More Docs
 
-- Room Passes currently use plaintext storage while the schema still contains `room_pass_hash`. Migrate this carefully without wiping live data.
-- Sections are not implemented beyond the existing `section_id` compatibility column.
-- The IRC bridge remains a no-op adapter.
+- [docs/server-install.md](docs/server-install.md): server install, deploy, backup, restore.
+- [docs/client-release.md](docs/client-release.md): client release and publishing flow.
+- [docs/release-desktop.md](docs/release-desktop.md): server/client boundaries.
+- [docs/linux-packaging.md](docs/linux-packaging.md): AppImage, `.deb`, Arch notes.
+- [docs/memory-measurement.md](docs/memory-measurement.md): desktop memory measurement.
+
+## Deferred Work
+
+- Room Passes still need a careful hash migration while preserving existing live data.
+- Sections are limited to the existing compatibility column.
+- IRC bridge remains a no-op adapter.
