@@ -6,7 +6,8 @@ import { emitToAllConnectedUsers } from "../lib/realtime.js";
 const registerSchema = z.object({
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
   displayName: z.string().min(2).max(40),
-  password: z.string().min(8).max(128)
+  password: z.string().min(8).max(128),
+  confirmPassword: z.string()
 });
 
 const loginSchema = z.object({
@@ -30,6 +31,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid payload", issues: parsed.error.flatten() });
+    }
+
+    if (parsed.data.password !== parsed.data.confirmPassword) {
+      return reply.code(400).send({
+        error: "As senhas não coincidem."
+      });
     }
 
     try {

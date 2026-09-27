@@ -54,6 +54,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     const [username, setUsername] = useState("");
     const [displayName, setDisplayName] = useState("");
     const [password, setPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
     const [validationError, setValidationError] = useState<string | null>(null);
     const queryClient = useQueryClient();
 
@@ -63,7 +64,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
                   return loginUser({ username, password });
               }
 
-              return registerUser({ username, displayName, password });
+              return registerUser({ username, displayName, password, confirmPassword });
         },
         onSuccess: async (data) => {
             setToken(data.token);
@@ -87,6 +88,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
                 setValidationError("A senha deve ter pelo menos 8 caracteres.");
                 return;
             }
+
+
         } else {
             if (!/^[a-zA-Z0-9_]{3,20}$/.test(username.trim())) {
                 setValidationError("Use apenas letras, números e sublinhado no nome de usuário.");
@@ -100,6 +103,11 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
 
             if (password.length < 8 || password.length > 128) {
                 setValidationError("A senha deve ter entre 8 e 128 caracteres.");
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                setValidationError("As senhas não coincidem. Por favor, tente novamente.");
                 return;
             }
         }
@@ -177,6 +185,15 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
                     {mode === "register" && <span className="muted">Entre 8 e 128 caracteres.</span>}
                 </label>
 
+                    {mode === "register" && (
+                        <label className="stack">
+                            <span>Confirm Password</span>
+                            <input type="password" value={confirmPassword} onChange={(event) => {
+                                setConfirmPassword(event.target.value);
+                                clearAuthError();
+                            }} required />
+                        </label>
+                    )}
                 {(validationError || mutation.error) && (
                     <p className="error">{validationError ?? (mutation.error as Error).message}</p>
                 )}
