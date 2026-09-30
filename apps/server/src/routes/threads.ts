@@ -16,6 +16,10 @@ const updateMessageSchema = z.object({
   body: z.string().min(1).max(4000)
 });
 
+const markThreadReadSchema = z.object({
+  messageId: z.string().uuid().optional().nullable()
+});
+
 function extractMentionUsernames(body: string) {
   const matches = body.match(/@([a-zA-Z0-9_]+)/g) ?? [];
   return [...new Set(matches.map((item) => item.slice(1).toLowerCase()))];
@@ -100,6 +104,43 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
     return {
       messages: app.db.listMessages(params.data.threadId, limit).reverse()
     };
+  });
+
+  app.post("/threads/:threadId/read", {
+    preHandler: app.authenticate
+  }, async (request, reply) => {
+    const params = z.object({
+      threadId: z.string()
+    }).safeParse(request.params);
+
+    if (!params.success) {
+      return reply.code(400).send({ error: "invalid thread id" });
+    }
+
+    if (!app.db.canAccessThread(params.data.threadId, request.currentUser!.id)) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+
+    const parsed = markThreadReadSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid payload", issues: parsed.error.flatten() });
+    }
+
+    const marked = app.db.markThreadRead({
+      threadId: params.data.threadId,
+      userId: request.currentUser!.id,
+      messageId: parsed.data.messageId ?? null
+    });
+
+    if (!marked) {
+      return reply.code(400).send({ error: "invalid read position" });
+    }
+
+    emitToUsers(app, [request.currentUser!.id], "thread.read", {
+      threadId: params.data.threadId
+    });
+
+    return { ok: true as const };
   });
 
   app.patch("/threads/:threadId/messages/:messageId", {
@@ -199,6 +240,11 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
       userId: request.currentUser!.id,
       body: parsed.data.body,
       replyToMessageId: parsed.data.replyToMessageId ?? null
+    });
+
+    app.db.markThreadRead({
+      threadId: params.data.threadId,
+      userId: request.currentUser!.id
     });
 
     const mentionedUsernames = extractMentionUsernames(parsed.data.body);
