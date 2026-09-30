@@ -96,6 +96,29 @@ export const roomRoutes: FastifyPluginAsync = async (app) => {
         };
     });
 
+    app.post("/rooms/:roomId/read", {
+        preHandler: app.authenticate
+    }, async (request, reply) => {
+        const parsed = z.object({
+            roomId: z.string()
+        }).safeParse(request.params);
+
+        if (!parsed.success) {
+            return reply.code(400).send({ error: "invalid room id" });
+        }
+
+        if (!app.db.isRoomMember(parsed.data.roomId, request.currentUser!.id)) {
+            return reply.code(403).send({ error: "forbidden" });
+        }
+
+        app.db.markRoomRead({
+            roomId: parsed.data.roomId,
+            userId: request.currentUser!.id
+        });
+
+        return { ok: true as const };
+    });
+
     app.post("/rooms/join", {
         preHandler: app.authenticate,
         config: {

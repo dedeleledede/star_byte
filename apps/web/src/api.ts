@@ -17,6 +17,9 @@ export interface Thread {
   isPrivate: number;
   roomId: string | null;
   createdAt: string;
+  unreadCount: number;
+  lastReadMessageId: string | null;
+  lastReadAt: string | null;
 }
 
 export interface ThreadMember {
@@ -59,6 +62,7 @@ export interface Room {
   createdAt: string;
   roomPass: string | null;
   iconUrl: string | null;
+  unreadCount: number;
 }
 
 export interface RoomUser {
@@ -268,6 +272,13 @@ export function fetchMessages(threadId: string) {
   return request<{ messages: Message[] }>(`/api/threads/${threadId}/messages`);
 }
 
+export function markThreadRead(threadId: string, input?: { messageId?: string | null }) {
+  return request<{ ok: true }>(`/api/threads/${threadId}/read`, {
+    method: "POST",
+    body: JSON.stringify(input ?? {})
+  });
+}
+
 export function sendMessage(threadId: string, input: { body: string; replyToMessageId?: string | null }) {
   return request<{ message: Message }>(`/api/threads/${threadId}/messages`, {
     method: "POST",
@@ -305,6 +316,12 @@ export function markMentionNotificationsRead(threadId: string) {
 
 export function fetchRooms() {
   return request<{ rooms: Room[] }>("/api/rooms");
+}
+
+export function markRoomRead(roomId: string) {
+  return request<{ ok: true }>(`/api/rooms/${roomId}/read`, {
+    method: "POST"
+  });
 }
 
 export function createRoom(input: {

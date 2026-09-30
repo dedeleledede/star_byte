@@ -26,6 +26,9 @@ export interface ThreadRecord {
   isPrivate: number;
   roomId: string | null;
   createdAt: string;
+  unreadCount: number;
+  lastReadMessageId: string | null;
+  lastReadAt: string | null;
 }
 
 export interface MessageRecord {
@@ -69,6 +72,7 @@ export interface RoomRecord {
   roomPass: string | null;
   iconUrl: string | null;
   createdAt: string;
+  unreadCount: number;
 }
 
 export class DatabaseService {
@@ -138,6 +142,17 @@ export class DatabaseService {
         FOREIGN KEY (thread_id) REFERENCES threads(id),
         FOREIGN KEY (message_id) REFERENCES messages(id),
         FOREIGN KEY (mentioned_by_user_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS thread_reads (
+        thread_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        last_read_message_id TEXT,
+        last_read_at TEXT NOT NULL,
+        PRIMARY KEY (thread_id, user_id),
+        FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (last_read_message_id) REFERENCES messages(id)
       );
 
       CREATE TABLE IF NOT EXISTS rooms (
@@ -314,7 +329,8 @@ export class DatabaseService {
         host_user_id as hostUserId,
         room_pass as roomPass,
         icon_url as iconUrl,
-        created_at as createdAt
+        created_at as createdAt,
+        0 as unreadCount
       FROM rooms
       WHERE id = ?
     `).get(roomId) as RoomRecord | undefined;
@@ -330,7 +346,8 @@ export class DatabaseService {
       host_user_id as hostUserId,
       room_pass as roomPass,
       icon_url as iconUrl,
-      created_at as createdAt
+      created_at as createdAt,
+      0 as unreadCount
     FROM rooms
     WHERE room_pass = ?
   `).get(roomPass) as RoomRecord | undefined;
@@ -366,12 +383,24 @@ export class DatabaseService {
         t.created_by as createdBy,
         t.is_private as isPrivate,
         t.room_id as roomId,
-        t.created_at as createdAt
+        t.created_at as createdAt,
+        tr.last_read_message_id as lastReadMessageId,
+        tr.last_read_at as lastReadAt,
+        (
+          SELECT COUNT(*)
+          FROM messages m
+          WHERE m.thread_id = t.id
+            AND m.deleted_at IS NULL
+            AND m.user_id <> @userId
+            AND m.created_at > COALESCE(lm.created_at, tr.last_read_at, '')
+        ) as unreadCount
       FROM threads t
+      LEFT JOIN thread_reads tr ON tr.thread_id = t.id AND tr.user_id = @userId
+      LEFT JOIN messages lm ON lm.id = tr.last_read_message_id
       INNER JOIN room_members rm ON rm.room_id = t.room_id
-      WHERE rm.user_id = ? AND t.room_id = ? AND t.kind = 'text'
+      WHERE rm.user_id = @userId AND t.room_id = @roomId AND t.kind = 'text'
       ORDER BY t.title COLLATE NOCASE ASC
-    `).all(userId, roomId) as ThreadRecord[];
+    `).all({ userId, roomId }) as ThreadRecord[];
   }
 
   createThread(input: { title: string; creatorId: string; roomId: string; memberIds?: string[] }) {
@@ -383,7 +412,10 @@ export class DatabaseService {
       createdBy: input.creatorId,
       isPrivate: 0,
       roomId: input.roomId,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      unreadCount: 0,
+      lastReadMessageId: null,
+      lastReadAt: null
     };
 
     this.db.prepare(`
@@ -538,6 +570,53 @@ export class DatabaseService {
     return this.getMessageById(id)!;
   }
 
+  markThreadRead(input: { userId: string; threadId: string; messageId?: string | null }) {
+    const marker = input.messageId
+      ? this.db.prepare(`
+        SELECT id
+        FROM messages
+        WHERE id = ? AND thread_id = ? AND deleted_at IS NULL
+      `).get(input.messageId, input.threadId) as { id: string } | undefined
+      : this.db.prepare(`
+      SELECT id
+      FROM messages
+      WHERE thread_id = ? AND deleted_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(input.threadId) as { id: string } | undefined;
+
+    if (input.messageId && !marker) {
+      return false;
+    }
+
+    this.db.prepare(`
+      INSERT INTO thread_reads (thread_id, user_id, last_read_message_id, last_read_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(thread_id, user_id) DO UPDATE SET
+        last_read_message_id = excluded.last_read_message_id,
+        last_read_at = excluded.last_read_at
+    `).run(input.threadId, input.userId, marker?.id ?? null, new Date().toISOString());
+
+    return true;
+  }
+
+  markRoomRead(input: { userId: string; roomId: string }) {
+    const threadIds = this.db.prepare(`
+      SELECT t.id
+      FROM threads t
+      INNER JOIN room_members rm ON rm.room_id = t.room_id AND rm.user_id = ?
+      WHERE t.room_id = ? AND t.kind = 'text'
+    `).all(input.userId, input.roomId) as Array<{ id: string }>;
+
+    const markRead = this.db.transaction((ids: Array<{ id: string }>) => {
+      for (const thread of ids) {
+        this.markThreadRead({ userId: input.userId, threadId: thread.id });
+      }
+    });
+
+    markRead(threadIds);
+  }
+
   updateMessage(input: { messageId: string; body: string }) {
     const editedAt = new Date().toISOString();
 
@@ -635,7 +714,8 @@ export class DatabaseService {
       roomPass: null,
       iconUrl: null,
       roomPassHash: "",
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      unreadCount: 0
     };
 
     this.db.prepare(`
@@ -653,7 +733,8 @@ export class DatabaseService {
       hostUserId: room.hostUserId,
       roomPass: room.roomPass,
       iconUrl: room.iconUrl,
-      createdAt: room.createdAt
+      createdAt: room.createdAt,
+      unreadCount: room.unreadCount
     } satisfies RoomRecord;
   }
 
@@ -686,12 +767,24 @@ export class DatabaseService {
         r.host_user_id as hostUserId,
         r.room_pass as roomPass,
         r.icon_url as iconUrl,
-        r.created_at as createdAt
+        r.created_at as createdAt,
+        (
+          SELECT COUNT(*)
+          FROM threads t
+          INNER JOIN messages m ON m.thread_id = t.id
+          LEFT JOIN thread_reads tr ON tr.thread_id = t.id AND tr.user_id = @userId
+          LEFT JOIN messages lm ON lm.id = tr.last_read_message_id
+          WHERE t.room_id = r.id
+            AND t.kind = 'text'
+            AND m.deleted_at IS NULL
+            AND m.user_id <> @userId
+            AND m.created_at > COALESCE(lm.created_at, tr.last_read_at, '')
+        ) as unreadCount
       FROM rooms r
              INNER JOIN room_members rm ON rm.room_id = r.id
-      WHERE rm.user_id = ?
+      WHERE rm.user_id = @userId
       ORDER BY r.name COLLATE NOCASE ASC
-    `).all(userId) as RoomRecord[];
+    `).all({ userId }) as RoomRecord[];
   }
 
   listUsersForRoom(roomId: string) {
@@ -721,7 +814,10 @@ export class DatabaseService {
       created_by as createdBy,
       is_private as isPrivate,
       room_id as roomId,
-      created_at as createdAt
+      created_at as createdAt,
+      0 as unreadCount,
+      NULL as lastReadMessageId,
+      NULL as lastReadAt
     FROM threads
     WHERE id = ?
   `).get(threadId) as ThreadRecord | undefined;
@@ -763,17 +859,29 @@ export class DatabaseService {
       t.created_by as createdBy,
       t.is_private as isPrivate,
       t.room_id as roomId,
-      t.created_at as createdAt
+      t.created_at as createdAt,
+      tr.last_read_message_id as lastReadMessageId,
+      tr.last_read_at as lastReadAt,
+      (
+        SELECT COUNT(*)
+        FROM messages m
+        WHERE m.thread_id = t.id
+          AND m.deleted_at IS NULL
+          AND m.user_id <> @userId
+          AND m.created_at > COALESCE(lm.created_at, tr.last_read_at, '')
+      ) as unreadCount
     FROM threads t
+    LEFT JOIN thread_reads tr ON tr.thread_id = t.id AND tr.user_id = @userId
+    LEFT JOIN messages lm ON lm.id = tr.last_read_message_id
     INNER JOIN thread_members self_member
-      ON self_member.thread_id = t.id AND self_member.user_id = ?
+      ON self_member.thread_id = t.id AND self_member.user_id = @userId
     INNER JOIN thread_members other_member
-      ON other_member.thread_id = t.id AND other_member.user_id <> ?
+      ON other_member.thread_id = t.id AND other_member.user_id <> @userId
     INNER JOIN users other_user
       ON other_user.id = other_member.user_id
     WHERE t.kind = 'whisper'
     ORDER BY t.created_at DESC
-  `).all(userId, userId) as ThreadRecord[];
+  `).all({ userId }) as ThreadRecord[];
   }
 
   findWhisperBetweenUsers(userAId: string, userBId: string) {
@@ -786,7 +894,10 @@ export class DatabaseService {
       t.created_by as createdBy,
       t.is_private as isPrivate,
       t.room_id as roomId,
-      t.created_at as createdAt
+      t.created_at as createdAt,
+      0 as unreadCount,
+      NULL as lastReadMessageId,
+      NULL as lastReadAt
     FROM threads t
     INNER JOIN thread_members a
       ON a.thread_id = t.id AND a.user_id = ?
@@ -807,7 +918,10 @@ export class DatabaseService {
       createdBy: input.creatorId,
       isPrivate: 1,
       roomId: null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      unreadCount: 0,
+      lastReadMessageId: null,
+      lastReadAt: null
     };
 
     this.db.prepare(`
