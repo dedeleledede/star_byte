@@ -210,7 +210,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export function registerUser(input: { username: string; displayName: string; password: string }) {
+export function registerUser(input: { username: string; displayName: string; password: string; confirmPassword: string; }) {
   return request<{ token: string; user: User }>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify(input)
