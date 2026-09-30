@@ -23,8 +23,6 @@ import {
     registerUser,
 
     markMentionNotificationsRead,
-    markRoomRead,
-    markThreadRead,
     sendMessage,
 
     setToken,
@@ -613,11 +611,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             await queryClient.invalidateQueries({
                 queryKey: ["messages", activeThread.id]
             });
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ["rooms"] }),
-                queryClient.invalidateQueries({ queryKey: ["threads"] }),
-                queryClient.invalidateQueries({ queryKey: ["whispers"] })
-            ]);
         }
     });
 
@@ -750,27 +743,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         }
     });
 
-    const markThreadReadMutation = useMutation({
-        mutationFn: async (threadId: string) => markThreadRead(threadId),
-        onSuccess: async () => {
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ["rooms"] }),
-                queryClient.invalidateQueries({ queryKey: ["threads"] }),
-                queryClient.invalidateQueries({ queryKey: ["whispers"] })
-            ]);
-        }
-    });
-
-    const markRoomReadMutation = useMutation({
-        mutationFn: async (roomId: string) => markRoomRead(roomId),
-        onSuccess: async () => {
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ["rooms"] }),
-                queryClient.invalidateQueries({ queryKey: ["threads"] })
-            ]);
-        }
-    });
-
     // memos
 
     const validMentionUsernames = useMemo(() => {
@@ -843,22 +815,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             })
             .catch(() => {});
     }, [activeThread?.id, queryClient]);
-
-    useEffect(() => {
-        if (!activeThread?.id) return;
-        if (!messagesQuery.isSuccess) return;
-
-        const messages = messagesQuery.data ?? [];
-        const lastMessageId = messages.at(-1)?.id ?? null;
-
-        markThreadRead(activeThread.id, { messageId: lastMessageId })
-            .then(() => {
-                void queryClient.invalidateQueries({ queryKey: ["rooms"] });
-                void queryClient.invalidateQueries({ queryKey: ["threads"] });
-                void queryClient.invalidateQueries({ queryKey: ["whispers"] });
-            })
-            .catch(() => {});
-    }, [activeThread?.id, messagesQuery.data?.length, messagesQuery.isSuccess, queryClient]);
 
     useEffect(() => {
         function closeMenus() {
@@ -1572,11 +1528,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                 onMouseLeave={() => setRoomTooltip(null)}
                             >
                                 <RoomAvatar room={room} />
-                                {room.unreadCount > 0 && (
-                                    <span className="room-unread-indicator" aria-label={`${room.unreadCount} unread messages`}>
-                                        {room.unreadCount > 99 ? "99+" : room.unreadCount}
-                                    </span>
-                                )}
                             </button>
                         ))}
                     </div>
@@ -1606,16 +1557,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                 roomThreads.map((thread: Thread) => (
                                     <button
                                         key={thread.id}
-                                        className={[
-                                            "thread-item",
-                                            activeThread?.id === thread.id ? "thread-item-active" : "",
-                                            thread.unreadCount > 0 ? "thread-item-unread" : ""
-                                        ].filter(Boolean).join(" ")}
+                                        className={`thread-item ${activeThread?.id === thread.id ? "thread-item-active" : ""}`}
                                         onClick={() => {
                                             if (!activeRoom?.id) return;
                                             openRoomThread(activeRoom.id, thread.id);
                                         }}
                                         onContextMenu={(event) => {
+                                            if (!canDeleteRoomThread(thread)) return;
                                             event.preventDefault();
                                             setRoomContextMenu({
                                                 type: "thread",
@@ -1626,12 +1574,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                         }}
                                     >
                                         <span>{thread.kind === "whisper" ? "@" : "#"}</span>
-                                        <span className="thread-title">{thread.title}</span>
-                                        {thread.unreadCount > 0 && (
-                                            <span className="unread-count">
-                                                {thread.unreadCount > 99 ? "99+" : thread.unreadCount}
-                                            </span>
-                                        )}
+                                        <span>{thread.title}</span>
                                     </button>
                                 ))
                             )}
@@ -1673,29 +1616,11 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             whispers.map((thread: Thread) => (
                                 <button
                                     key={thread.id}
-                                    className={[
-                                        "thread-item",
-                                        activeThread?.id === thread.id ? "thread-item-active" : "",
-                                        thread.unreadCount > 0 ? "thread-item-unread" : ""
-                                    ].filter(Boolean).join(" ")}
+                                    className={`thread-item ${activeThread?.id === thread.id ? "thread-item-active" : ""}`}
                                     onClick={() => openWhisper(thread.id)}
-                                    onContextMenu={(event) => {
-                                        event.preventDefault();
-                                        setRoomContextMenu({
-                                            type: "thread",
-                                            id: thread.id,
-                                            x: event.clientX,
-                                            y: event.clientY
-                                        });
-                                    }}
                                 >
                                     <span>@</span>
-                                    <span className="thread-title">{thread.title}</span>
-                                    {thread.unreadCount > 0 && (
-                                        <span className="unread-count">
-                                            {thread.unreadCount > 99 ? "99+" : thread.unreadCount}
-                                        </span>
-                                    )}
+                                    <span>{thread.title}</span>
                                 </button>
                             ))
                         )}
@@ -2184,17 +2109,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             <button
                                 type="button"
                                 className="context-menu-item"
-                                onClick={async () => {
-                                    await markRoomReadMutation.mutateAsync(roomContextMenu.id);
-                                    setRoomContextMenu(null);
-                                }}
-                            >
-                                Mark Room Read
-                            </button>
-
-                            <button
-                                type="button"
-                                className="context-menu-item"
                                 onClick={() => {
                                     setRoomPassPanelRoomId(roomContextMenu.id);
                                     setCopiedRoomPass(false);
@@ -2229,36 +2143,16 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             </button>
                         </>
                     ) : (
-                        <>
-                            <button
-                                type="button"
-                                className="context-menu-item"
-                                onClick={async () => {
-                                    await markThreadReadMutation.mutateAsync(roomContextMenu.id);
-                                    setRoomContextMenu(null);
-                                }}
-                            >
-                                Mark Thread Read
-                            </button>
-
-                            {(() => {
-                                const thread = [...roomThreads, ...whispers].find((item) => item.id === roomContextMenu.id);
-                                if (!thread || !canDeleteRoomThread(thread)) return null;
-
-                                return (
-                                    <button
-                                        type="button"
-                                        className="context-menu-item context-menu-item-danger"
-                                        onClick={async () => {
-                                            await deleteThreadMutation.mutateAsync(roomContextMenu.id);
-                                            setRoomContextMenu(null);
-                                        }}
-                                    >
-                                        Delete Thread
-                                    </button>
-                                );
-                            })()}
-                        </>
+                        <button
+                            type="button"
+                            className="context-menu-item context-menu-item-danger"
+                            onClick={async () => {
+                                await deleteThreadMutation.mutateAsync(roomContextMenu.id);
+                                setRoomContextMenu(null);
+                            }}
+                        >
+                            Delete Thread
+                        </button>
                     )}
                 </div>
             )}

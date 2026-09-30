@@ -46,10 +46,6 @@ export function useSocket(enabled: boolean) {
               return exists ? current : [...current, message];
             }
         );
-
-        void queryClient.invalidateQueries({ queryKey: ["rooms"] });
-        void queryClient.invalidateQueries({ queryKey: ["threads"] });
-        void queryClient.invalidateQueries({ queryKey: ["whispers"] });
       }
 
       if (payload.type === "message.updated") {
@@ -68,16 +64,6 @@ export function useSocket(enabled: boolean) {
             ["messages", data.threadId],
             (current = []) => current.filter((item) => item.id !== data.messageId)
         );
-
-        void queryClient.invalidateQueries({ queryKey: ["rooms"] });
-        void queryClient.invalidateQueries({ queryKey: ["threads"] });
-        void queryClient.invalidateQueries({ queryKey: ["whispers"] });
-      }
-
-      if (payload.type === "thread.read") {
-        void queryClient.invalidateQueries({ queryKey: ["rooms"] });
-        void queryClient.invalidateQueries({ queryKey: ["threads"] });
-        void queryClient.invalidateQueries({ queryKey: ["whispers"] });
       }
 
       if (payload.type === "mention.created") {
