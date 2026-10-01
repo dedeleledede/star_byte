@@ -1209,11 +1209,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             ...prev,
             [roomId]: threadId
         }));
+        setScreen("thread"); // <-- Linha adicionada para forçar o fechamento do perfil
     }
 
     function openWhisper(threadId: string) {
         setSidebarMode("whispers");
         setActiveWhisperId(threadId);
+        setScreen("thread"); // <-- Linha adicionada para forçar o fechamento do perfil
     }
 
     function openUserProfileFromId(userId: string) {
