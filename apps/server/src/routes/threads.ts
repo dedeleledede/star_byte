@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { emitToUsers } from "../lib/realtime.js";
-import { extractMentionUsernames } from '../lib/expression';
+import { extractMentionUsernames } from '../lib/expression.js';
 
 const createThreadSchema = z.object({
   title: z.string().min(1).max(60),
