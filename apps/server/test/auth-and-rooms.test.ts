@@ -23,8 +23,7 @@ async function register(app: Awaited<ReturnType<typeof buildApp>>, username: str
     payload: {
       username,
       displayName: username.toUpperCase(),
-      password: "password123",
-      confirmPassword: password
+      password: "password123"
     }
   });
 
