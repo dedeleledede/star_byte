@@ -16,9 +16,6 @@ const createMessageSchema = z.object({
 const updateMessageSchema = z.object({
   body: z.string().min(1).max(4000)
 });
-
-}
-
 export const threadRoutes: FastifyPluginAsync = async (app) => {
   function emitToThreadMembers(threadId: string, type: string, data: unknown) {
     emitToUsers(
