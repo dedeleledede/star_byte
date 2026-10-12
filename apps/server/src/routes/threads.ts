@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { emitToUsers } from "../lib/realtime.js";
+import { extractMentionUsernames } from '../lib/expression.js';
 
 const createThreadSchema = z.object({
   title: z.string().min(1).max(60),
@@ -15,12 +16,6 @@ const createMessageSchema = z.object({
 const updateMessageSchema = z.object({
   body: z.string().min(1).max(4000)
 });
-
-function extractMentionUsernames(body: string) {
-  const matches = body.match(/@([a-zA-Z0-9_]+)/g) ?? [];
-  return [...new Set(matches.map((item) => item.slice(1).toLowerCase()))];
-}
-
 export const threadRoutes: FastifyPluginAsync = async (app) => {
   function emitToThreadMembers(threadId: string, type: string, data: unknown) {
     emitToUsers(
