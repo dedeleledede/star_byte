@@ -233,6 +233,9 @@ export function updateMe(input: {
   avatarUrl: string;
   bio: string;
   statusText: string;
+  isBioPublic?: boolean | number;
+  isStatusPublic?: boolean | number;
+  isAvatarPublic?: boolean | number;
 }) {
   return request<{ user: User }>("/api/auth/me", {
     method: "PATCH",

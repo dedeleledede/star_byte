@@ -15,10 +15,14 @@ const loginSchema = z.object({
 });
 
 const updateMeSchema = z.object({
-  displayName: z.string().min(2).max(40),
-  avatarUrl: z.string().max(500).optional().or(z.literal("")),
-  bio: z.string().max(240),
-  statusText: z.string().max(80)
+  displayName: z.string().min(1),
+  avatarUrl: z.string().nullable().optional(),
+  bio: z.string().default(""),
+  statusText: z.string().default(""),
+  // COLOCA ESSES TRÊS AQUI NO ZOD:
+  isBioPublic: z.boolean().optional(),
+  isStatusPublic: z.boolean().optional(),
+  isAvatarPublic: z.boolean().optional(),
 });
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
@@ -95,6 +99,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         avatarUrl: user.avatarUrl,
         bio: user.bio,
         statusText: user.statusText,
+        isBioPublic: user.isBioPublic,
+        isStatusPublic: user.isStatusPublic,
+        isAvatarPublic: user.isAvatarPublic,
         createdAt: user.createdAt
       }
     };
@@ -118,16 +125,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const { displayName, avatarUrl, bio, statusText } = parsed.data;
+    const { displayName, avatarUrl, bio, statusText, isBioPublic, isStatusPublic, isAvatarPublic } = parsed.data;
     const userId = request.currentUser!.id;
 
     const user = app.db.updateUserProfile({
-      userId,
-      displayName,
-      avatarUrl: avatarUrl || null,
-      bio,
-      statusText
-    });
+  userId,
+  displayName,
+  avatarUrl: avatarUrl || null,
+  bio,
+  statusText,
+  isBioPublic: isBioPublic ? 1 : 0,
+  isStatusPublic: isStatusPublic ? 1 : 0,
+  isAvatarPublic: isAvatarPublic ? 1 : 0,
+});
 
     if (!user) {
       return reply.code(404).send({ error: "user not found" });
