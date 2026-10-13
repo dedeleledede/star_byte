@@ -789,7 +789,7 @@ const updateProfileMutation = useMutation({
     const sidePanelUsers = useMemo(() => {
         if (!activeThread) return [] as User[];
 
-        if (sidebarMode === "whispers") {
+       if (sidebarMode === "whispers") {
             return (threadMembersQuery.data ?? []).map((member) => {
                 const fullUser = usersById.get(member.id);
                 return {
@@ -799,7 +799,10 @@ const updateProfileMutation = useMutation({
                     avatarUrl: member.avatarUrl,
                     bio: fullUser?.bio ?? "",
                     statusText: fullUser?.statusText ?? "",
-                    createdAt: fullUser?.createdAt ?? ""
+                    createdAt: fullUser?.createdAt ?? "",
+                    isBioPublic: fullUser?.isBioPublic ?? 1,
+                    isStatusPublic: fullUser?.isStatusPublic ?? 1,
+                    isAvatarPublic: fullUser?.isAvatarPublic ?? 1
                 } satisfies User;
             });
         }
@@ -811,7 +814,10 @@ const updateProfileMutation = useMutation({
             avatarUrl: user.avatarUrl,
             bio: user.bio ?? "",
             statusText: user.statusText ?? "",
-            createdAt: user.createdAt
+            createdAt: user.createdAt,
+            isBioPublic: user.isBioPublic ?? 1,
+            isStatusPublic: user.isStatusPublic ?? 1,
+            isAvatarPublic: user.isAvatarPublic ?? 1
         } satisfies User));
     }, [activeThread, sidebarMode, threadMembersQuery.data, usersById, roomUsersQuery.data]);
 
