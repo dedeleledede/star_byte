@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import path from "node:path";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
@@ -25,7 +26,7 @@ export async function buildApp() {
     trustProxy
   });
 
-  const dbPath = process.env.DB_PATH ?? "./data/starbyte.db";
+  const dbPath = process.env.DB_PATH ?? path.resolve(process.cwd(), "starbyte.db");
   const clientOrigin = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
   const jwtSecret = process.env.JWT_SECRET ?? "change-me-now";
   const isProduction = process.env.NODE_ENV === "production";

@@ -17,7 +17,10 @@ export async function registerAuthPlugin(app: FastifyInstance) {
         avatarUrl: user.avatarUrl ?? null,
         bio: user.bio ?? "",
         statusText: user.statusText ?? "",
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        isBioPublic: user.isBioPublic ?? 1,
+        isStatusPublic: user.isStatusPublic ?? 1,
+        isAvatarPublic: user.isAvatarPublic ?? 1
       };
     } catch {
       return reply.code(401).send({ error: "unauthorized" });

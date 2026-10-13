@@ -10,11 +10,17 @@ export interface SafeUser {
   avatarUrl: string | null;
   bio: string | null;
   statusText: string | null;
+  isBioPublic: number;     // Novo
+  isStatusPublic: number;  // Novo
+  isAvatarPublic: number;  // Novo
   createdAt: string;
 }
 
 interface UserRecord extends SafeUser {
   passwordHash: string;
+  isBioPublic: number;
+  isStatusPublic: number;
+  isAvatarPublic: number;
 }
 
 export interface ThreadRecord {
@@ -180,6 +186,17 @@ export class DatabaseService {
       if (!names.has("status_text")) {
         this.db.exec("ALTER TABLE users ADD COLUMN status_text TEXT NOT NULL DEFAULT ''");
       }
+
+      // Adicione estas três novas linhas aqui embaixo:
+      if (!names.has("is_bio_public")) {
+        this.db.exec("ALTER TABLE users ADD COLUMN is_bio_public INTEGER NOT NULL DEFAULT 1");
+      }
+      if (!names.has("is_status_public")) {
+        this.db.exec("ALTER TABLE users ADD COLUMN is_status_public INTEGER NOT NULL DEFAULT 1");
+      }
+      if (!names.has("is_avatar_public")) {
+        this.db.exec("ALTER TABLE users ADD COLUMN is_avatar_public INTEGER NOT NULL DEFAULT 1");
+      }
     };
 
     const ensureThreadRoomColumns = () => {
@@ -259,19 +276,22 @@ export class DatabaseService {
       avatarUrl: null,
       bio: "",
       statusText: "",
+      isBioPublic: 1,
+      isStatusPublic: 1,
+      isAvatarPublic: 1,
       createdAt: new Date().toISOString()
     };
 
     this.db.prepare(`
-      INSERT INTO users (id, username, display_name, password_hash, avatar_url, bio, status_text, created_at)
-      VALUES (@id, @username, @displayName, @passwordHash, @avatarUrl, @bio, @statusText, @createdAt)
+      INSERT INTO users (id, username, display_name, password_hash, avatar_url, bio, status_text, is_bio_public, is_status_public, is_avatar_public, created_at)
+      VALUES (@id, @username, @displayName, @passwordHash, @avatarUrl, @bio, @statusText, @isBioPublic, @isStatusPublic, @isAvatarPublic, @createdAt)
     `).run(user);
 
     this.addMemberToThread("general", user.id, "member");
 
     return this.toSafeUser(user);
   }
-
+  
   findUserByUsername(username: string) {
     return this.db.prepare(`
       SELECT
@@ -282,6 +302,9 @@ export class DatabaseService {
         avatar_url as avatarUrl,
         bio,
         status_text as statusText,
+        is_bio_public as isBioPublic,
+        is_status_public as isStatusPublic,
+        is_avatar_public as isAvatarPublic,
         created_at as createdAt
       FROM users
       WHERE username = ?
@@ -298,6 +321,9 @@ export class DatabaseService {
         avatar_url as avatarUrl,
         bio,
         status_text as statusText,
+        is_bio_public as isBioPublic,
+        is_status_public as isStatusPublic,
+        is_avatar_public as isAvatarPublic,
         created_at as createdAt
       FROM users
       WHERE id = ?
@@ -733,24 +759,23 @@ export class DatabaseService {
     avatarUrl: string | null;
     bio: string;
     statusText: string;
+    isBioPublic: number;
+    isStatusPublic: number;
+    isAvatarPublic: number;
   }) {
     this.db.prepare(`
-    UPDATE users
-    SET display_name = ?,
-        avatar_url = ?,
-        bio = ?,
-        status_text = ?
-    WHERE id = ?
-  `).run(
-        input.displayName,
-        input.avatarUrl,
-        input.bio,
-        input.statusText,
-        input.userId
-    );
+      UPDATE users
+      SET display_name = @displayName,
+          avatar_url = @avatarUrl,
+          bio = @bio,
+          status_text = @statusText,
+          is_bio_public = @isBioPublic,
+          is_status_public = @isStatusPublic,
+          is_avatar_public = @isAvatarPublic
+      WHERE id = @userId
+    `).run(input);
 
-    const user = this.findUserById(input.userId);
-    return user ? this.toSafeUser(user) : undefined;
+    return this.findUserById(input.userId);
   }
 
   listWhispersForUser(userId: string) {
@@ -829,6 +854,9 @@ export class DatabaseService {
       avatarUrl: user.avatarUrl,
       bio: user.bio,
       statusText: user.statusText,
+      isBioPublic: user.isBioPublic ?? 1,
+      isStatusPublic: user.isStatusPublic ?? 1,
+      isAvatarPublic: user.isAvatarPublic ?? 1,
       createdAt: user.createdAt
     };
   }

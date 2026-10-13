@@ -238,18 +238,25 @@ function isGroupedWithPrevious(current: { userId: string; createdAt: string }, p
     return currentTime - previousTime < 10 * 60 * 1000;
 }
 
-function ProfileScreen({   user, displayName, setDisplayName,
-                           avatarUrl, setAvatarUrl,
-                           bio, setBio, statusText, setStatusText,
-                           onAvatarUpload, isUploadingAvatar,
-                           onBack, onSave, isSaving, error, uploadError
-                       }: {
+function ProfileScreen({ 
+    user, displayName, setDisplayName,
+    avatarUrl, setAvatarUrl,
+    bio, setBio, statusText, setStatusText,
+    isBioPublic, setIsBioPublic,
+    isStatusPublic, setIsStatusPublic,
+    isAvatarPublic, setIsAvatarPublic,
+    onAvatarUpload, isUploadingAvatar,
+    onBack, onSave, isSaving, error, uploadError
+}: {
     user: {
         username: string;
         displayName: string;
         avatarUrl?: string | null;
         bio?: string | null;
         statusText?: string | null;
+        isBioPublic?: number;
+        isStatusPublic?: number;
+        isAvatarPublic?: number;
     };
     displayName: string;
     setDisplayName: (value: string) => void;
@@ -259,6 +266,12 @@ function ProfileScreen({   user, displayName, setDisplayName,
     setBio: (value: string) => void;
     statusText: string;
     setStatusText: (value: string) => void;
+    isBioPublic: boolean;
+    setIsBioPublic: (value: boolean) => void;
+    isStatusPublic: boolean;
+    setIsStatusPublic: (value: boolean) => void;
+    isAvatarPublic: boolean;
+    setIsAvatarPublic: (value: boolean) => void;
     onAvatarUpload: (file: File) => void;
     isUploadingAvatar: boolean;
     onBack: () => void;
@@ -327,6 +340,16 @@ function ProfileScreen({   user, displayName, setDisplayName,
                             onChange={(event) => setStatusText(event.target.value)}
                         />
                     </label>
+                    
+                    {/* Checkbox de Visibilidade do Status */}
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.9rem" }}>
+                        <input
+                            type="checkbox"
+                            checked={isStatusPublic}
+                            onChange={(e) => setIsStatusPublic(e.target.checked)}
+                        />
+                        <span>Make status public</span>
+                    </label>
 
                     <label className="stack">
                         <span>Bio</span>
@@ -336,6 +359,27 @@ function ProfileScreen({   user, displayName, setDisplayName,
                             rows={6}
                         />
                     </label>
+
+                    {/* Checkbox de Visibilidade da Bio e do Avatar */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.9rem" }}>
+                            <input
+                                type="checkbox"
+                                checked={isBioPublic}
+                                onChange={(e) => setIsBioPublic(e.target.checked)}
+                            />
+                            <span>Make bio public</span>
+                        </label>
+
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.9rem" }}>
+                            <input
+                                type="checkbox"
+                                checked={isAvatarPublic}
+                                onChange={(e) => setIsAvatarPublic(e.target.checked)}
+                            />
+                            <span>Make avatar public</span>
+                        </label>
+                    </div>
 
                     {(error || uploadError) && <p className="error">{error ?? uploadError}</p>}
 
@@ -355,6 +399,10 @@ function ProfileScreen({   user, displayName, setDisplayName,
 
 function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void; theme: string; onThemeChange: (theme: string) => void; }) {
     const queryClient = useQueryClient();
+
+    const [isBioPublic, setIsBioPublic] = useState(true);
+    const [isStatusPublic, setIsStatusPublic] = useState(true);
+    const [isAvatarPublic, setIsAvatarPublic] = useState(true);
 
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
     const [screen, setScreen] = useState<"thread" | "profile">("thread");
@@ -518,13 +566,16 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         }
     });
 
-    const updateProfileMutation = useMutation({
+const updateProfileMutation = useMutation({
         mutationFn: async () => {
             return updateMe({
                 displayName: profileDisplayName,
                 avatarUrl: profileAvatarUrl,
                 bio: profileBio,
-                statusText: profileStatusText
+                statusText: profileStatusText,
+                isBioPublic,
+                isStatusPublic,
+                isAvatarPublic
             });
         },
         onSuccess: async (data) => {
@@ -533,6 +584,9 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             setProfileAvatarUrl(data.user.avatarUrl ?? "");
             setProfileBio(data.user.bio ?? "");
             setProfileStatusText(data.user.statusText ?? "");
+            setIsBioPublic(data.user.isBioPublic === 1);
+            setIsStatusPublic(data.user.isStatusPublic === 1);
+            setIsAvatarPublic(data.user.isAvatarPublic === 1);
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["users"] }),
                 queryClient.invalidateQueries({ queryKey: ["room-users"] }),
@@ -735,7 +789,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const sidePanelUsers = useMemo(() => {
         if (!activeThread) return [] as User[];
 
-        if (sidebarMode === "whispers") {
+       if (sidebarMode === "whispers") {
             return (threadMembersQuery.data ?? []).map((member) => {
                 const fullUser = usersById.get(member.id);
                 return {
@@ -745,7 +799,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                     avatarUrl: member.avatarUrl,
                     bio: fullUser?.bio ?? "",
                     statusText: fullUser?.statusText ?? "",
-                    createdAt: fullUser?.createdAt ?? ""
+                    createdAt: fullUser?.createdAt ?? "",
+                    isBioPublic: fullUser?.isBioPublic ?? 1,
+                    isStatusPublic: fullUser?.isStatusPublic ?? 1,
+                    isAvatarPublic: fullUser?.isAvatarPublic ?? 1
                 } satisfies User;
             });
         }
@@ -757,7 +814,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             avatarUrl: user.avatarUrl,
             bio: user.bio ?? "",
             statusText: user.statusText ?? "",
-            createdAt: user.createdAt
+            createdAt: user.createdAt,
+            isBioPublic: user.isBioPublic ?? 1,
+            isStatusPublic: user.isStatusPublic ?? 1,
+            isAvatarPublic: user.isAvatarPublic ?? 1
         } satisfies User));
     }, [activeThread, sidebarMode, threadMembersQuery.data, usersById, roomUsersQuery.data]);
 
@@ -780,13 +840,17 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         }
     }, [rooms, activeRoomId]);
 
-    useEffect(() => {
-        if (!meQuery.data?.user) return;
+   useEffect(() => {
+        const currentUser = meQuery.data?.user;
+        if (!currentUser) return;
 
-        setProfileDisplayName(meQuery.data.user.displayName ?? "");
-        setProfileAvatarUrl(meQuery.data.user.avatarUrl ?? "");
-        setProfileBio(meQuery.data.user.bio ?? "");
-        setProfileStatusText(meQuery.data.user.statusText ?? "");
+        setProfileDisplayName(currentUser.displayName);
+        setProfileAvatarUrl(currentUser.avatarUrl ?? "");
+        setProfileBio(currentUser.bio ?? "");
+        setProfileStatusText(currentUser.statusText ?? "");
+        setIsBioPublic(currentUser.isBioPublic === 1);
+        setIsStatusPublic(currentUser.isStatusPublic === 1);
+        setIsAvatarPublic(currentUser.isAvatarPublic === 1);
     }, [meQuery.data?.user]);
 
     useEffect(() => {
@@ -1625,6 +1689,12 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                     setBio={setProfileBio}
                     statusText={profileStatusText}
                     setStatusText={setProfileStatusText}
+                    isBioPublic={isBioPublic}
+                    setIsBioPublic={setIsBioPublic}
+                    isStatusPublic={isStatusPublic}
+                    setIsStatusPublic={setIsStatusPublic}
+                    isAvatarPublic={isAvatarPublic}
+                    setIsAvatarPublic={setIsAvatarPublic}
                     onAvatarUpload={(file) => uploadProfileImageMutation.mutate(file)}
                     isUploadingAvatar={uploadProfileImageMutation.isPending}
                     onBack={() => setScreen("thread")}

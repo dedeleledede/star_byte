@@ -3,9 +3,12 @@ export interface User {
   username: string;
   displayName: string;
   avatarUrl: string | null;
-  bio: string | null;
-  statusText: string | null;
+  bio: string;
+  statusText: string;
   createdAt: string;
+  isBioPublic: number;
+  isStatusPublic: number;
+  isAvatarPublic: number;
 }
 
 export interface Thread {
@@ -69,6 +72,9 @@ export interface RoomUser {
   bio: string | null;
   statusText: string | null;
   createdAt: string;
+  isBioPublic?: number;
+  isStatusPublic?: number;
+  isAvatarPublic?: number;
 }
 
 export interface LinkEmbed {
@@ -233,6 +239,9 @@ export function updateMe(input: {
   avatarUrl: string;
   bio: string;
   statusText: string;
+  isBioPublic?: boolean | number;
+  isStatusPublic?: boolean | number;
+  isAvatarPublic?: boolean | number;
 }) {
   return request<{ user: User }>("/api/auth/me", {
     method: "PATCH",
