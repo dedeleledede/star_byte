@@ -14,16 +14,6 @@ const loginSchema = z.object({
   password: z.string().min(8).max(128)
 });
 
-export const updateMeSchema = z.object({
-  displayName: z.string().optional(),
-  avatarUrl: z.string().nullable().optional(),
-  bio: z.string().optional(),
-  statusText: z.string().optional(),
-  isBioPublic: z.union([z.boolean(), z.number()]).optional(),
-  isStatusPublic: z.union([z.boolean(), z.number()]).optional(),
-  isAvatarPublic: z.union([z.boolean(), z.number()]).optional(),
-}).strict();
-
 export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post("/register", {
     config: {
@@ -135,7 +125,6 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
     const { displayName, avatarUrl, bio, statusText, isBioPublic, isStatusPublic, isAvatarPublic } = body as any;
 
-    // Validação estrita: displayName não pode ser vazio nem ter menos de 2 caracteres (o 'B' do teste vai cair aqui!)
     if (
       (displayName !== undefined && (typeof displayName !== "string" || displayName.trim().length < 2)) ||
       (avatarUrl !== undefined && avatarUrl !== null && typeof avatarUrl !== "string") ||
