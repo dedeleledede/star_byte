@@ -947,6 +947,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         setEditingMessageId(null);
         setEditingDraft("");
         setReplyingToMessage(null);
+        setMentionOpen(false);
+        setMentionQuery("");
+        setMentionStart(null);
+        setSelectedMentionIndex(0);
     }, [activeThread?.id]);
 
     useEffect(() => {
@@ -964,6 +968,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
         function handleArrowUpEdit(event: KeyboardEvent) {
             if (event.key !== "ArrowUp") return;
+            if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
             if (screen !== "thread") return;
             if (!activeThread) return;
             if (roomOverlayOpen) return;
@@ -2025,6 +2030,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                     }}
                                     onKeyDown={(event) => {
                                         if (!mentionOpen || mentionSuggestions.length === 0) return;
+                                        if (event.ctrlKey || event.metaKey || event.altKey) return;
 
                                         if (event.key === "ArrowDown") {
                                             event.preventDefault();
