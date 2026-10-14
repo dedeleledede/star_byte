@@ -864,6 +864,59 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }, [screen, activeThread, roomOverlayOpen, selectedUserProfile, accountMenuOpen]);
 
     useEffect(() => {
+        function handleKeyboardNavigation(event: KeyboardEvent) {
+            if (!event.altKey || event.metaKey || event.shiftKey) return;
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+            if (screen !== "thread") return;
+            if (roomOverlayOpen || roomPassPanelRoom || roomIconPanelRoomId) return;
+            if (selectedUserProfile || accountMenuOpen || roomContextMenu || messageContextMenu) return;
+            if (editingMessageId) return;
+
+            const direction = event.key === "ArrowUp" ? -1 : 1;
+
+            if (event.ctrlKey) {
+                if (rooms.length < 2) return;
+
+                const currentIndex = rooms.findIndex((room) => room.id === activeRoom?.id);
+                const nextIndex = currentIndex + direction;
+                const nextRoom = rooms[nextIndex];
+                if (!nextRoom) return;
+
+                event.preventDefault();
+                setSidebarMode("threads");
+                setActiveRoomId(nextRoom.id);
+                return;
+            }
+
+            const conversations = sidebarMode === "threads" ? roomThreads : whispers;
+            if (conversations.length < 2) return;
+
+            const currentIndex = conversations.findIndex((thread) => thread.id === activeThread?.id);
+            const nextIndex = currentIndex + direction;
+            const nextConversation = conversations[nextIndex];
+            if (!nextConversation) return;
+
+            event.preventDefault();
+
+            if (sidebarMode === "threads" && activeRoom) {
+                openRoomThread(activeRoom.id, nextConversation.id);
+            } else {
+                openWhisper(nextConversation.id);
+            }
+        }
+
+        window.addEventListener("keydown", handleKeyboardNavigation);
+        return () => window.removeEventListener("keydown", handleKeyboardNavigation);
+    }, [
+        screen, roomOverlayOpen, roomPassPanelRoom,
+        roomIconPanelRoomId, selectedUserProfile,
+        accountMenuOpen, roomContextMenu,
+        messageContextMenu, editingMessageId,
+        rooms, activeRoom, sidebarMode,
+        roomThreads, whispers, activeThread
+    ]);
+
+    useEffect(() => {
         if (sidebarMode !== "threads") return;
         if (!activeRoom?.id) return;
         if (roomThreads.length === 0) return;
@@ -894,6 +947,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         setEditingMessageId(null);
         setEditingDraft("");
         setReplyingToMessage(null);
+        setMentionOpen(false);
+        setMentionQuery("");
+        setMentionStart(null);
+        setSelectedMentionIndex(0);
     }, [activeThread?.id]);
 
     useEffect(() => {
@@ -911,6 +968,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
         function handleArrowUpEdit(event: KeyboardEvent) {
             if (event.key !== "ArrowUp") return;
+            if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
             if (screen !== "thread") return;
             if (!activeThread) return;
             if (roomOverlayOpen) return;
@@ -1972,6 +2030,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                     }}
                                     onKeyDown={(event) => {
                                         if (!mentionOpen || mentionSuggestions.length === 0) return;
+                                        if (event.ctrlKey || event.metaKey || event.altKey) return;
 
                                         if (event.key === "ArrowDown") {
                                             event.preventDefault();
