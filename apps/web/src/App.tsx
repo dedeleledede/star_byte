@@ -247,6 +247,7 @@ function ProfileScreen({
     isStatusPublic, setIsStatusPublic,
     isAvatarPublic, setIsAvatarPublic,
     onAvatarUpload, isUploadingAvatar,
+    uploadProgress, onCancelUpload,
     onBack, onSave, isSaving, error, uploadError
 }: {
     user: {
@@ -275,6 +276,8 @@ function ProfileScreen({
     setIsAvatarPublic: (value: boolean) => void;
     onAvatarUpload: (file: File) => void;
     isUploadingAvatar: boolean;
+    uploadProgress: number;
+    onCancelUpload: () => void;
     onBack: () => void;
     onSave: (event: SyntheticEvent) => void;
     isSaving: boolean;
@@ -320,7 +323,7 @@ function ProfileScreen({
                     </label>
 
                     <label className="button upload-button">
-                        {isUploadingAvatar ? "Uploading image..." : "Upload profile image"}
+                        {isUploadingAvatar ? `Uploading... ${uploadProgress}%` : "Upload profile image"}
                         <input
                             className="file-input"
                             type="file"
@@ -334,6 +337,15 @@ function ProfileScreen({
                         />
                     </label>
 
+                    {isUploadingAvatar && (
+                        <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "8px" }}>
+                            <progress value={uploadProgress} max="100" style={{ width: "100%" }} />
+                            <button type="button" className="button" onClick={onCancelUpload}>
+                                Cancel
+                            </button>
+                        </div>
+                    )}
+
                     <label className="stack">
                         <span>Status</span>
                         <input
@@ -342,7 +354,6 @@ function ProfileScreen({
                         />
                     </label>
                     
-                    {/* Checkbox de Visibilidade do Status */}
                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.9rem" }}>
                         <input
                             type="checkbox"
@@ -361,7 +372,6 @@ function ProfileScreen({
                         />
                     </label>
 
-                    {/* Checkbox de Visibilidade da Bio e do Avatar */}
                     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.9rem" }}>
                             <input
@@ -399,6 +409,12 @@ function ProfileScreen({
 }
 
 function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void; theme: string; onThemeChange: (theme: string) => void; }) {
+    const [avatarUploadProgress, setAvatarUploadProgress] = useState(0);
+    const [avatarUploadTask, setAvatarUploadTask] = useState<{ abort: () => void } | null>(null);
+
+    const [chatUploadProgress, setChatUploadProgress] = useState(0);
+    const [chatUploadTask, setChatUploadTask] = useState<{ abort: () => void } | null>(null);
+    
     const queryClient = useQueryClient();
 
     const [isBioPublic, setIsBioPublic] = useState(true);
@@ -1081,6 +1097,13 @@ const updateProfileMutation = useMutation({
         return Array.from(new Set(text.match(EMBED_URL_RE) ?? []));
     }
 
+    function cancelAvatarUpload() {
+    if (avatarUploadTask) {
+        avatarUploadTask.abort();
+        setAvatarUploadTask(null);
+        setAvatarUploadProgress(0);
+        }
+    }
     function MessageEmbed({url, onJoinRoomPass}: {
         url: string;
         onJoinRoomPass: (roomPass: string) => void;
@@ -1729,6 +1752,8 @@ const updateProfileMutation = useMutation({
                     setIsAvatarPublic={setIsAvatarPublic}
                     onAvatarUpload={(file) => uploadProfileImageMutation.mutate(file)}
                     isUploadingAvatar={uploadProfileImageMutation.isPending}
+                    uploadProgress={avatarUploadProgress}
+                    onCancelUpload={cancelAvatarUpload}
                     onBack={() => setScreen("thread")}
                     onSave={handleProfileSave}
                     isSaving={updateProfileMutation.isPending}
@@ -2113,20 +2138,31 @@ const updateProfileMutation = useMutation({
                                     </div>
                                 )}
 
-                                <label className="button attachment-button">
-                                    {uploadChatImageMutation.isPending ? "Uploading..." : "Image"}
-                                    <input
-                                        className="file-input"
-                                        type="file"
-                                        accept="image/png,image/jpeg,image/gif,image/webp"
-                                        disabled={uploadChatImageMutation.isPending}
-                                        onChange={(event) => {
-                                            const file = event.target.files?.[0];
-                                            if (file) uploadChatImageMutation.mutate(file);
-                                            event.target.value = "";
-                                        }}
-                                    />
-                                </label>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                    <label className="button attachment-button">
+                                        {uploadChatImageMutation.isPending ? `Uploading... ${chatUploadProgress}%` : "Image"}
+                                        <input
+                                            className="file-input"
+                                            type="file"
+                                            accept="image/png,image/jpeg,image/gif,image/webp"
+                                            disabled={uploadChatImageMutation.isPending}
+                                            onChange={(event) => {
+                                                const file = event.target.files?.[0];
+                                                if (file) uploadChatImageMutation.mutate(file);
+                                                event.target.value = "";
+                                            }}
+                                        />
+                                    </label>
+                                    {uploadChatImageMutation.isPending && (
+                                        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                                            <progress value={chatUploadProgress} max="100" style={{ width: "80px" }} />
+                                            <button type="button" className="button" style={{ padding: "2px 6px", fontSize: "0.8rem" }} onClick={cancelChatUpload}>
+                                                X
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <button
                                     ref={emojiButtonRef}
                                     type="button"

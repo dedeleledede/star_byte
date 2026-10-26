@@ -249,14 +249,92 @@ export function updateMe(input: {
   });
 }
 
-export function uploadImage(file: File) {
-  const formData = new FormData();
-  formData.append("image", file);
+export interface UploadTask {
+  promise: Promise<{ url: string }>;
+  abort: () => void;
+}
 
-  return request<{ url: string }>("/api/uploads/images", {
-    method: "POST",
-    body: formData
-  });
+export function uploadImage(
+  file: File,
+  onProgress?: (progress: number) => void,
+  maxRetries = 3
+) {
+  let xhr: XMLHttpRequest | null = null;
+  let currentAttempt = 0;
+
+  const executeUpload = (): Promise<{ url: string }> => {
+    return new Promise((resolve, reject) => {
+      xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append("image", file);
+
+      xhr.open("POST", apiUrl("/api/uploads/images"));
+
+      const token = getToken();
+      if (token) {
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      }
+
+      // 1. Progresso
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const percent = Math.round((event.loaded * 100) / event.total);
+          onProgress(percent);
+        }
+      };
+
+      // 2. Conclusão / Resposta
+      xhr.onload = () => {
+        if (xhr!.status >= 200 && xhr!.status < 300) {
+          try {
+            const data = JSON.parse(xhr!.responseText);
+            resolve(data);
+          } catch {
+            reject(new Error("Erro ao interpretar resposta do servidor."));
+          }
+        } else {
+          if (xhr!.status === 401) {
+            setToken(null);
+            window.dispatchEvent(new Event("star_byte-auth-invalid"));
+          }
+          try {
+            const data = JSON.parse(xhr!.responseText);
+            reject(new Error(data.error || "Falha no upload."));
+          } catch {
+            reject(new Error("Falha no upload."));
+          }
+        }
+      };
+
+      // 3. Falha de rede
+      xhr.onerror = () => {
+        reject(new Error("Não foi possível ligar ao servidor."));
+      };
+
+      // 4. Cancelamento
+      xhr.onabort = () => {
+        reject(new Error("Upload cancelado."));
+      };
+
+      xhr.send(formData);
+    }).catch(async (error) => {
+      // 5. Nova tentativa (Retry automático)
+      if (currentAttempt < maxRetries && error.message !== "Upload cancelado.") {
+        currentAttempt++;
+        return executeUpload();
+      }
+      throw error;
+    });
+  };
+
+  const promise = executeUpload() as Promise<{ url: string }> & { abort: () => void };
+  promise.abort = () => {
+    if (xhr) {
+      xhr.abort();
+    }
+  };
+
+  return promise;
 }
 
 export function fetchThreads(roomId: string) {
