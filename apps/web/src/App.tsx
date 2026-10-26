@@ -46,6 +46,7 @@ import {
 import { useSocket } from "./hooks/useSocket";
 import { PwaPrompt } from "./components/PwaPrompt";
 import { DesktopUpdater } from "./components/DesktopUpdater";
+import { EmojiPicker } from "./components/EmojiPicker";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 
@@ -435,6 +436,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
     const [editingDraft, setEditingDraft] = useState("");
     const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+
+    // Emoji picker state
+    const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+    const emojiButtonRef = useRef<HTMLButtonElement>(null);
 
     const composerRef = useRef<HTMLInputElement | null>(null);
     const messagesRef = useRef<HTMLElement | null>(null);
@@ -1222,6 +1227,33 @@ const updateProfileMutation = useMutation({
         requestAnimationFrame(() => {
             input?.focus();
             const position = before.length + mentionText.length;
+            input?.setSelectionRange(position, position);
+        });
+    }
+
+    // Emoji picker functions
+    function toggleEmojiPicker() {
+        setEmojiPickerOpen((prev) => !prev);
+    }
+
+    function closeEmojiPicker() {
+        setEmojiPickerOpen(false);
+    }
+
+    function insertEmoji(emoji: string) {
+        const input = composerRef.current;
+        const selectionStart = input?.selectionStart ?? draft.length;
+        const selectionEnd = input?.selectionEnd ?? selectionStart;
+        const before = draft.slice(0, selectionStart);
+        const after = draft.slice(selectionEnd);
+        const next = `${before}${emoji}${after}`;
+
+        setDraft(next);
+
+        // Keep picker open for multiple emojis, focus back to input
+        requestAnimationFrame(() => {
+            input?.focus();
+            const position = before.length + emoji.length;
             input?.setSelectionRange(position, position);
         });
     }
@@ -2095,6 +2127,16 @@ const updateProfileMutation = useMutation({
                                         }}
                                     />
                                 </label>
+                                <button
+                                    ref={emojiButtonRef}
+                                    type="button"
+                                    className={`emoji-toggle-button ${emojiPickerOpen ? "active" : ""}`}
+                                    onClick={toggleEmojiPicker}
+                                    aria-label="Open emoji picker"
+                                    title="Emojis"
+                                >
+                                    😀
+                                </button>
                                 <button className="button button-primary" disabled={sendMutation.isPending || !activeThread}>
                                     Send
                                 </button>
@@ -2439,6 +2481,14 @@ const updateProfileMutation = useMutation({
                     </div>
                 </div>
             )}
+
+            {/* Emoji Picker */}
+            <EmojiPicker
+                isOpen={emojiPickerOpen}
+                onClose={closeEmojiPicker}
+                onEmojiSelect={insertEmoji}
+                anchorElement={emojiButtonRef.current}
+            />
 
             {!IS_TAURI && <PwaPrompt />}
         </div>
