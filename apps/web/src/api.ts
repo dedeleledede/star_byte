@@ -263,7 +263,7 @@ export function uploadImage(
   let currentAttempt = 0;
 
   const executeUpload = (): Promise<{ url: string }> => {
-    return new Promise((resolve, reject) => {
+    return new Promise<{ url: string }>((resolve, reject) => {
       xhr = new XMLHttpRequest();
       const formData = new FormData();
       formData.append("image", file);

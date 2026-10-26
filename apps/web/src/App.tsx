@@ -1104,6 +1104,14 @@ const updateProfileMutation = useMutation({
         setAvatarUploadProgress(0);
         }
     }
+    
+    function cancelChatUpload() {
+    if (chatUploadTask) {
+        chatUploadTask.abort();
+        setChatUploadTask(null);
+        setChatUploadProgress(0);
+        }
+    }
     function MessageEmbed({url, onJoinRoomPass}: {
         url: string;
         onJoinRoomPass: (roomPass: string) => void;
