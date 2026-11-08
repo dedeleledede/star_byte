@@ -465,3 +465,35 @@ export function createWhisper(input: { targetUserId: string }) {
     body: JSON.stringify(input)
   });
 }
+
+export interface Reaction {
+  id: string;
+  messageId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  emoji: string;
+  createdAt: string;
+}
+
+export function addReaction(threadId: string, messageId: string, emoji: string) {
+  return request<{ reaction: Reaction }>(`/api/threads/${threadId}/messages/${messageId}/reactions`, {
+    method: "POST",
+    body: JSON.stringify({ emoji })
+  });
+}
+
+export function removeReaction(threadId: string, messageId: string, emoji: string) {
+  return request<{ ok: true }>(`/api/threads/${threadId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, {
+    method: "DELETE"
+  });
+}
+
+export function fetchReactionsForMessage(threadId: string, messageId: string) {
+  return request<{ reactions: Reaction[] }>(`/api/threads/${threadId}/messages/${messageId}/reactions`);
+}
+
+export function fetchReactionsForMessages(threadId: string, messageIds: string[]) {
+  return request<{ reactions: Reaction[] }>(`/api/threads/${threadId}/messages/reactions?messageIds=${messageIds.join(",")}`);
+}

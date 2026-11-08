@@ -467,6 +467,7 @@ strong {
   display: grid;
   gap: 2px;
   min-width: 0;
+  justify-items: start;
 }
 
 .message-meta {
@@ -490,6 +491,10 @@ strong {
 
 .message-text-grouped {
   padding-left: 40px;
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  min-width: 0;
 }
 
 .message-prefix {
@@ -1150,6 +1155,10 @@ strong {
 
 .message-text-grouped {
   padding-left: 40px;
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  min-width: 0;
 }
 
 .message-content {
@@ -1593,4 +1602,108 @@ strong {
 /* Adjust composer to accommodate emoji button */
 .composer {
   grid-template-columns: 1fr auto auto auto;
+}
+
+/* Message reactions */
+.message-reactions {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-left: 20px; /* Align with message content (after 14px prefix + 6px gap) */
+  justify-self: start; /* Don't stretch to fill grid cell */
+  max-width: 100%;
+}
+
+.reaction-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.reaction-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  background: var(--button-bg);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+  transition: all 0.15s ease;
+}
+
+.reaction-button:hover {
+  background: var(--button-hover);
+  border-color: var(--border-strong);
+}
+
+.reaction-button:active {
+  background: var(--button-active);
+}
+
+.reaction-button-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #08111a;
+}
+
+.reaction-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.reaction-count {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.reaction-add-button {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.reaction-add-button:hover {
+  background: var(--button-bg);
+  border-color: var(--border-strong);
+  border-style: solid;
+  color: var(--text);
+}
+
+.reaction-add-button:active {
+  background: var(--button-active);
+}
+
+/* Light theme adjustments for reaction button active state */
+:root[data-theme="light"] .reaction-button-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #08111a;
+}
+
+:root[data-theme="dracula"] .reaction-button-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1e1f29;
+}
+
+:root[data-theme="deep-forest"] .reaction-button-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0f0a;
 }

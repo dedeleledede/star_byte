@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getToken, type Message, type User } from "../api";
+import { getToken, type Message, type User, type Reaction } from "../api";
 
 const WS_BASE_URL = (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, "") || "";
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
@@ -94,6 +94,44 @@ export function useSocket(enabled: boolean) {
         void queryClient.invalidateQueries({ queryKey: ["messages"] });
         void queryClient.invalidateQueries({ queryKey: ["mention-notifications"] });
         void queryClient.invalidateQueries({ queryKey: ["whispers"] });
+      }
+
+      if (payload.type === "reaction.added") {
+        const data = payload.data as Reaction & { threadId: string };
+
+        // Update reactions cache for the specific message
+        queryClient.setQueryData<Reaction[]>(
+          ["reactions", data.threadId, data.messageId],
+          (current = []) => {
+            const exists = current.some((item) => item.id === data.id);
+            return exists ? current : [...current, data];
+          }
+        );
+
+        // Also update the batch reactions cache if it exists
+        queryClient.setQueryData<Reaction[]>(
+          ["reactions-batch", data.threadId],
+          (current = []) => {
+            const exists = current.some((item) => item.id === data.id);
+            return exists ? current : [...current, data];
+          }
+        );
+      }
+
+      if (payload.type === "reaction.removed") {
+        const data = payload.data as { threadId: string; messageId: string; userId: string; emoji: string };
+
+        // Update reactions cache for the specific message
+        queryClient.setQueryData<Reaction[]>(
+          ["reactions", data.threadId, data.messageId],
+          (current = []) => current.filter((item) => !(item.userId === data.userId && item.emoji === data.emoji))
+        );
+
+        // Also update the batch reactions cache if it exists
+        queryClient.setQueryData<Reaction[]>(
+          ["reactions-batch", data.threadId],
+          (current = []) => current.filter((item) => !(item.userId === data.userId && item.emoji === data.emoji))
+        );
       }
     };
 
