@@ -491,6 +491,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const rooms = roomsQuery.data ?? [];
 
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+    const [isPlainText, setIsPlainText] = useState(false);
 
     const [selectedThreadByRoom, setSelectedThreadByRoom] = useState<Record<string, string>>({});
     const [activeWhisperId, setActiveWhisperId] = useState<string | null>(null);
@@ -2065,8 +2066,14 @@ const updateProfileMutation = useMutation({
                                                                                     : "Original message unavailable"}
                                                                             </button>
                                                                         )}
-                                                                        <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
 
+                                                                        {isPlainText ? (
+    <div style={{ fontFamily: "monospace", fontSize: "0.9rem", whiteSpace: "pre-wrap" }}>
+        <span>[{new Date(message.createdAt).toLocaleTimeString()}]</span> {"<"}{message.displayName}{">"} {message.body}
+    </div>
+) : (
+    <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
+)}
                                                                         {urls.map((url) => (
                                                                             UPLOADED_IMAGE_RE.test(url) ? (
                                                                                 <MessageAttachment key={url} url={url} />
@@ -2278,6 +2285,15 @@ const updateProfileMutation = useMutation({
                                         </button>
                                     </div>
                                 )}
+                                <button
+                                    type="button"
+                                    className={`button ${isPlainText ? "button-primary" : ""}`}
+                                    style={{ padding: "4px 8px", fontSize: "0.8rem" }}
+                                    onClick={() => setIsPlainText(!isPlainText)}
+                                    title="Alternar Modo de Texto Simples"
+                                >
+                                    {isPlainText ? "Modo Normal" : "Modo Texto"}
+                                </button>
                                 <input
                                     ref={composerRef}
                                     value={draft}
