@@ -36,10 +36,16 @@ import {
     createRoom,
     joinRoom,
 
+    addReaction,
+    removeReaction,
+    fetchReactionsForMessage,
+    fetchReactionsForMessages,
+
     type Message,
     type Thread,
     type Room,
-    type RoomUser, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass, deleteMessage,
+    type RoomUser,
+    type Reaction, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass, deleteMessage,
     uploadImage, mediaUrl,
     User
 } from "./api";
@@ -457,6 +463,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
     const emojiButtonRef = useRef<HTMLButtonElement>(null);
 
+    // Reaction picker state
+    const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
+    const reactionButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
     const composerRef = useRef<HTMLInputElement | null>(null);
     const messagesRef = useRef<HTMLElement | null>(null);
     const messageRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -530,6 +540,26 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         refetchInterval: 2000,
         refetchOnWindowFocus: true
     });
+
+    // Fetch reactions for all messages in the active thread
+    const messageIds = useMemo(() => (messagesQuery.data ?? []).map((m) => m.id), [messagesQuery.data]);
+    const reactionsBatchQuery = useQuery({
+        queryKey: ["reactions-batch", activeThread?.id],
+        queryFn: () => fetchReactionsForMessages(activeThread!.id, messageIds).then((data) => data.reactions),
+        enabled: Boolean(activeThread?.id && messageIds.length > 0),
+        refetchInterval: 2000,
+        refetchOnWindowFocus: true
+    });
+
+    const reactionsByMessageId = useMemo(() => {
+        const map = new Map<string, Reaction[]>();
+        for (const reaction of reactionsBatchQuery.data ?? []) {
+            const existing = map.get(reaction.messageId) ?? [];
+            existing.push(reaction);
+            map.set(reaction.messageId, existing);
+        }
+        return map;
+    }, [reactionsBatchQuery.data]);
 
     const mentionNotificationsQuery = useQuery({
         queryKey: ["mention-notifications"],
@@ -798,6 +828,54 @@ const updateProfileMutation = useMutation({
             await queryClient.invalidateQueries({
                 queryKey: ["messages", activeThread.id]
             });
+        }
+    });
+
+    const addReactionMutation = useMutation({
+        mutationFn: async ({ threadId, messageId, emoji }: { threadId: string; messageId: string; emoji: string }) => {
+            return addReaction(threadId, messageId, emoji);
+        },
+        onSuccess: async (data, vars) => {
+            if (!activeThread) return;
+
+            // Update reactions cache
+            queryClient.setQueryData<Reaction[]>(
+                ["reactions", vars.threadId, vars.messageId],
+                (current = []) => {
+                    const exists = current.some((item) => item.id === data.reaction.id);
+                    return exists ? current : [...current, data.reaction];
+                }
+            );
+
+            // Also update batch cache
+            queryClient.setQueryData<Reaction[]>(
+                ["reactions-batch", vars.threadId],
+                (current = []) => {
+                    const exists = current.some((item) => item.id === data.reaction.id);
+                    return exists ? current : [...current, data.reaction];
+                }
+            );
+        }
+    });
+
+    const removeReactionMutation = useMutation({
+        mutationFn: async ({ threadId, messageId, emoji }: { threadId: string; messageId: string; emoji: string }) => {
+            return removeReaction(threadId, messageId, emoji);
+        },
+        onSuccess: async (_, vars) => {
+            if (!activeThread) return;
+
+            // Update reactions cache
+            queryClient.setQueryData<Reaction[]>(
+                ["reactions", vars.threadId, vars.messageId],
+                (current = []) => current.filter((item) => !(item.userId === meQuery.data?.user.id && item.emoji === vars.emoji))
+            );
+
+            // Also update batch cache
+            queryClient.setQueryData<Reaction[]>(
+                ["reactions-batch", vars.threadId],
+                (current = []) => current.filter((item) => !(item.userId === meQuery.data?.user.id && item.emoji === vars.emoji))
+            );
         }
     });
 
@@ -1293,6 +1371,58 @@ const updateProfileMutation = useMutation({
         setToken(null);
         queryClient.clear();
         onLogout();
+    }
+
+    // Reaction functions
+    function toggleReaction(messageId: string, emoji: string) {
+        if (!activeThread) return;
+
+        const reactions = reactionsByMessageId.get(messageId) ?? [];
+        const myReaction = reactions.find(r => r.userId === meQuery.data?.user.id && r.emoji === emoji);
+
+        if (myReaction) {
+            removeReactionMutation.mutate({ threadId: activeThread.id, messageId, emoji });
+        } else {
+            addReactionMutation.mutate({ threadId: activeThread.id, messageId, emoji });
+        }
+    }
+
+    function getReactionCounts(messageId: string): { emoji: string; count: number; hasMine: boolean }[] {
+        const reactions = reactionsByMessageId.get(messageId) ?? [];
+        const counts = new Map<string, { count: number; hasMine: boolean }>();
+
+        for (const reaction of reactions) {
+            const existing = counts.get(reaction.emoji) ?? { count: 0, hasMine: false };
+            existing.count += 1;
+            if (reaction.userId === meQuery.data?.user.id) {
+                existing.hasMine = true;
+            }
+            counts.set(reaction.emoji, existing);
+        }
+
+        return Array.from(counts.entries())
+            .map(([emoji, { count, hasMine }]) => ({ emoji, count, hasMine }))
+            .sort((a, b) => b.count - a.count);
+    }
+
+    function handleReactionClick(messageId: string, emoji: string) {
+        toggleReaction(messageId, emoji);
+    }
+
+    function openReactionPicker(messageId: string) {
+        // This will open the emoji picker anchored to the reaction button
+        // We'll reuse the existing emoji picker but need a different anchor
+        // For now, let's just use the existing emoji picker with a custom onEmojiSelect
+    }
+
+    function toggleReactionPicker(messageId: string) {
+        setReactionPickerMessageId(prev => prev === messageId ? null : messageId);
+    }
+
+    function handleReactionEmojiSelect(emoji: string) {
+        if (reactionPickerMessageId && activeThread) {
+            toggleReaction(reactionPickerMessageId, emoji);
+        }
     }
 
     function handleSend(event: SyntheticEvent) {
@@ -1952,6 +2082,39 @@ const updateProfileMutation = useMutation({
                                                                 )}
                                                             </div>
 
+                                                            <div className="message-reactions">
+                                                                {(() => {
+                                                                    const reactionCounts = getReactionCounts(message.id);
+                                                                    return (
+                                                                        <div className="reaction-bar">
+                                                                            {reactionCounts.map(({ emoji, count, hasMine }) => (
+                                                                                <button
+                                                                                    key={emoji}
+                                                                                    type="button"
+                                                                                    className={`reaction-button ${hasMine ? "reaction-button-active" : ""}`}
+                                                                                    onClick={() => handleReactionClick(message.id, emoji)}
+                                                                                    title={`${count} ${count === 1 ? "reaction" : "reactions"}`}
+                                                                                    style={{ opacity: hasMine ? 1 : 0.7 }}
+                                                                                >
+                                                                                    <span className="reaction-emoji">{emoji}</span>
+                                                                                    <span className="reaction-count">{count}</span>
+                                                                                </button>
+                                                                            ))}
+                                                                            <button
+                                                                                type="button"
+                                                                                ref={(el) => { reactionButtonRefs.current[message.id] = el; }}
+                                                                                className="reaction-add-button"
+                                                                                onClick={() => toggleReactionPicker(message.id)}
+                                                                                aria-label="Add reaction"
+                                                                                title="Add reaction"
+                                                                            >
+                                                                                +
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                            </div>
+
                                                             {!isEditing ? (
                                                                 <div className="message-actions">
                                                                     <button
@@ -2044,6 +2207,39 @@ const updateProfileMutation = useMutation({
                                                                 ))}
                                                             </>
                                                         )}
+                                                    </div>
+
+                                                    <div className="message-reactions">
+                                                        {(() => {
+                                                            const reactionCounts = getReactionCounts(message.id);
+                                                            return (
+                                                                <div className="reaction-bar">
+                                                                    {reactionCounts.map(({ emoji, count, hasMine }) => (
+                                                                        <button
+                                                                            key={emoji}
+                                                                            type="button"
+                                                                            className={`reaction-button ${hasMine ? "reaction-button-active" : ""}`}
+                                                                            onClick={() => handleReactionClick(message.id, emoji)}
+                                                                            title={`${count} ${count === 1 ? "reaction" : "reactions"}`}
+                                                                            style={{ opacity: hasMine ? 1 : 0.7 }}
+                                                                        >
+                                                                            <span className="reaction-emoji">{emoji}</span>
+                                                                            <span className="reaction-count">{count}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                    <button
+                                                                        type="button"
+                                                                        ref={(el) => { reactionButtonRefs.current[message.id] = el; }}
+                                                                        className="reaction-add-button"
+                                                                        onClick={() => toggleReactionPicker(message.id)}
+                                                                        aria-label="Add reaction"
+                                                                        title="Add reaction"
+                                                                    >
+                                                                        +
+                                                                        </button>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </div>
 
                                                     {!isEditing ? <div className="message-actions">
@@ -2526,12 +2722,20 @@ const updateProfileMutation = useMutation({
                 </div>
             )}
 
-            {/* Emoji Picker */}
+            {/* Emoji Picker for composer */}
             <EmojiPicker
                 isOpen={emojiPickerOpen}
                 onClose={closeEmojiPicker}
                 onEmojiSelect={insertEmoji}
                 anchorElement={emojiButtonRef.current}
+            />
+
+            {/* Emoji Picker for reactions */}
+            <EmojiPicker
+                isOpen={!!reactionPickerMessageId}
+                onClose={() => setReactionPickerMessageId(null)}
+                onEmojiSelect={handleReactionEmojiSelect}
+                anchorElement={reactionPickerMessageId ? reactionButtonRefs.current[reactionPickerMessageId] : null}
             />
 
             {!IS_TAURI && <PwaPrompt />}

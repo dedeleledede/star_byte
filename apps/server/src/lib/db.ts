@@ -146,6 +146,17 @@ export class DatabaseService {
         FOREIGN KEY (mentioned_by_user_id) REFERENCES users(id)
       );
 
+      CREATE TABLE IF NOT EXISTS reactions (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(message_id, user_id, emoji)
+      );
+
       CREATE TABLE IF NOT EXISTS rooms (
        id TEXT PRIMARY KEY,
        name TEXT NOT NULL,
@@ -589,6 +600,91 @@ export class DatabaseService {
     DELETE FROM mention_notifications
     WHERE message_id = ?
   `).run(messageId);
+  }
+
+  // Reactions
+  addReaction(input: { messageId: string; userId: string; emoji: string }) {
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+
+    try {
+      this.db.prepare(`
+      INSERT INTO reactions (id, message_id, user_id, emoji, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, input.messageId, input.userId, input.emoji, createdAt);
+    }
+    catch (error) {
+      // Unique constraint violation - reaction already exists
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        return null;
+      }
+      throw error;
+    }
+
+    return this.getReactionById(id);
+  }
+
+  removeReaction(input: { messageId: string; userId: string; emoji: string }) {
+    this.db.prepare(`
+    DELETE FROM reactions
+    WHERE message_id = ? AND user_id = ? AND emoji = ?
+  `).run(input.messageId, input.userId, input.emoji);
+  }
+
+  getReactionById(reactionId: string) {
+    return this.db.prepare(`
+    SELECT
+      r.id,
+      r.message_id as messageId,
+      r.user_id as userId,
+      r.emoji,
+      r.created_at as createdAt,
+      u.username,
+      u.display_name as displayName,
+      u.avatar_url as avatarUrl
+    FROM reactions r
+    INNER JOIN users u ON u.id = r.user_id
+    WHERE r.id = ?
+  `).get(reactionId);
+  }
+
+  getReactionsForMessage(messageId: string) {
+    return this.db.prepare(`
+    SELECT
+      r.id,
+      r.message_id as messageId,
+      r.user_id as userId,
+      r.emoji,
+      r.created_at as createdAt,
+      u.username,
+      u.display_name as displayName,
+      u.avatar_url as avatarUrl
+    FROM reactions r
+    INNER JOIN users u ON u.id = r.user_id
+    WHERE r.message_id = ?
+    ORDER BY r.created_at ASC
+  `).all(messageId);
+  }
+
+  getReactionsForMessages(messageIds: string[]) {
+    if (messageIds.length === 0)
+      return [];
+    const placeholders = messageIds.map(() => '?').join(',');
+    return this.db.prepare(`
+    SELECT
+      r.id,
+      r.message_id as messageId,
+      r.user_id as userId,
+      r.emoji,
+      r.created_at as createdAt,
+      u.username,
+      u.display_name as displayName,
+      u.avatar_url as avatarUrl
+    FROM reactions r
+    INNER JOIN users u ON u.id = r.user_id
+    WHERE r.message_id IN (${placeholders})
+    ORDER BY r.created_at ASC
+  `).all(...messageIds);
   }
 
   getMessageById(messageId: string) {
