@@ -7,7 +7,7 @@ import {
     type MouseEvent as ReactMouseEvent
 } from "react";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
     fetchMe,
@@ -18,6 +18,7 @@ import {
     fetchThreadMembers,
     fetchMentionNotifications,
     fetchEmbed,
+    searchMessages,
 
     loginUser,
     registerUser,
@@ -37,6 +38,8 @@ import {
     joinRoom,
 
     type Message,
+    type MessageSearchFilters,
+    type SearchMessage,
     type Thread,
     type Room,
     type RoomUser, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass, deleteMessage,
@@ -391,6 +394,11 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [roomName, setRoomName] = useState("");
     const [joinRoomPass, setJoinRoomPass] = useState("");
     const [roomOverlayOpen, setRoomOverlayOpen] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchFilters, setSearchFilters] = useState<MessageSearchFilters>({});
+    const [submittedSearch, setSubmittedSearch] = useState<MessageSearchFilters | null>(null);
+    const [searchTarget, setSearchTarget] = useState<{ threadId: string; messageId: string } | null>(null);
+    const [searchThread, setSearchThread] = useState<Thread | null>(null);
     const [roomContextMenu, setRoomContextMenu] = useState<null | { type: "room" | "thread"; id: string; x: number; y: number; }>(null);
     const [messageContextMenu, setMessageContextMenu] = useState<null | { message: Message; x: number; y: number; }>(null);
     const [roomPassPanelRoomId, setRoomPassPanelRoomId] = useState<string | null>(null);
@@ -443,6 +451,12 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         refetchOnWindowFocus: true
     });
 
+    const searchThreadsQuery = useQuery({
+        queryKey: ["threads", searchFilters.roomId],
+        queryFn: () => fetchThreads(searchFilters.roomId!).then((data) => data.threads),
+        enabled: searchOpen && Boolean(searchFilters.roomId)
+    });
+
     const threads = threadsQuery.data ?? [];
 
     const roomThreads = threadsQuery.data ?? [];
@@ -452,12 +466,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const activeRoomThreadId = activeRoom?.id ? selectedThreadByRoom[activeRoom.id] ?? null : null;
 
     const activeThread = useMemo(() => {
+        if (searchThread && searchTarget?.threadId === searchThread.id) return searchThread;
         if (sidebarMode === "threads") {
             return roomThreads.find((thread) => thread.id === activeRoomThreadId) ?? roomThreads[0] ?? null;
         }
 
         return whispers.find((thread) => thread.id === activeWhisperId) ?? whispers[0] ?? null;
-    }, [sidebarMode, roomThreads, whispers, activeRoomThreadId, activeWhisperId]);
+    }, [sidebarMode, roomThreads, whispers, activeRoomThreadId, activeWhisperId, searchThread, searchTarget]);
 
     const roomUsersQuery = useQuery({
         queryKey: ["room-users", activeRoom?.id],
@@ -472,11 +487,19 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     });
 
     const messagesQuery = useQuery({
-        queryKey: ["messages", activeThread?.id],
-        queryFn: () => fetchMessages(activeThread!.id).then((data) => data.messages),
+        queryKey: ["messages", activeThread?.id, searchTarget?.threadId === activeThread?.id ? searchTarget.messageId : null],
+        queryFn: () => fetchMessages(activeThread!.id, searchTarget?.threadId === activeThread?.id ? searchTarget.messageId : undefined).then((data) => data.messages),
         enabled: Boolean(activeThread?.id),
         refetchInterval: 2000,
         refetchOnWindowFocus: true
+    });
+
+    const searchQuery = useInfiniteQuery({
+        queryKey: ["message-search", submittedSearch],
+        queryFn: ({ pageParam }) => searchMessages(submittedSearch!, pageParam),
+        initialPageParam: 0,
+        getNextPageParam: (lastPage, pages) => lastPage.hasMore ? pages.length * 50 : undefined,
+        enabled: searchOpen && submittedSearch !== null
     });
 
     const mentionNotificationsQuery = useQuery({
@@ -790,6 +813,11 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
       });
     }
     }, [messagesQuery.data, activeThread?.id]);
+
+    useEffect(() => {
+        if (searchTarget?.threadId !== activeThread?.id || !messagesQuery.data?.some((message) => message.id === searchTarget.messageId)) return;
+        requestAnimationFrame(() => messageRefs.current[searchTarget.messageId]?.scrollIntoView({ block: "center" }));
+    }, [searchTarget, activeThread?.id, messagesQuery.data]);
 
     useEffect(() => {
         if (!activeRoomId && rooms.length > 0) {
@@ -1278,6 +1306,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }
 
     function openRoomThread(roomId: string, threadId: string) {
+        setSearchTarget(null);
+        setSearchThread(null);
         setSidebarMode("threads");
         setActiveRoomId(roomId);
         setSelectedThreadByRoom((prev) => ({
@@ -1287,8 +1317,23 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }
 
     function openWhisper(threadId: string) {
+        setSearchTarget(null);
+        setSearchThread(null);
         setSidebarMode("whispers");
         setActiveWhisperId(threadId);
+    }
+
+    function openSearchResult(result: SearchMessage) {
+        if (result.roomId) openRoomThread(result.roomId, result.threadId);
+        else if (result.threadKind === "whisper") openWhisper(result.threadId);
+        else {
+            setSidebarMode("threads");
+            setSearchThread({ id: result.threadId, title: result.threadTitle, kind: "text", roomId: null,
+                slug: null, createdBy: null, isPrivate: 0, createdAt: result.createdAt });
+        }
+        setSearchTarget({ threadId: result.threadId, messageId: result.id });
+        setScreen("thread");
+        setSearchOpen(false);
     }
 
     function openUserProfileFromId(userId: string) {
@@ -1463,6 +1508,35 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                     </div>
                 </div>
             )}
+            {searchOpen && (
+                <div className="overlay-backdrop" onClick={() => setSearchOpen(false)}>
+                    <div className="overlay-panel search-overlay" role="dialog" aria-modal="true" aria-label="Search messages" onClick={(event) => event.stopPropagation()}>
+                        <div className="room-overlay-header">
+                            <strong>Search messages</strong>
+                            <button className="button" type="button" onClick={() => setSearchOpen(false)}>Close</button>
+                        </div>
+                        <form className="search-form" onSubmit={(event) => { event.preventDefault(); setSubmittedSearch({ ...searchFilters, q: searchFilters.q?.trim() }); }}>
+                            <label className="stack search-wide"><span>Text</span><input autoFocus placeholder="Search message text" value={searchFilters.q ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, q: event.target.value }))} /></label>
+                            <label className="stack"><span>User</span><select value={searchFilters.userId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, userId: event.target.value || undefined }))}><option value="">Any user</option>{usersQuery.data?.map((user) => <option key={user.id} value={user.id}>@{user.username}</option>)}</select></label>
+                            <label className="stack"><span>Room</span><select value={searchFilters.roomId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, roomId: event.target.value || undefined, threadId: undefined }))}><option value="">Any room or whisper</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>
+                            <label className="stack"><span>Thread</span><select value={searchFilters.threadId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, threadId: event.target.value || undefined }))}><option value="">Any thread</option>{(searchFilters.roomId ? searchThreadsQuery.data ?? [] : whispers).map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select></label>
+                            <label className="stack"><span>Tag</span><input placeholder="#tag" value={searchFilters.tag ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, tag: event.target.value.replace(/^#/, "") }))} pattern="[a-zA-Z0-9_]*" /></label>
+                            <label className="stack"><span>From date</span><input type="date" value={searchFilters.after ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, after: event.target.value || undefined }))} /></label>
+                            <label className="stack"><span>Through date</span><input type="date" value={searchFilters.before ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, before: event.target.value || undefined }))} /></label>
+                            <label className="stack"><span>Mentions</span><select value={searchFilters.mentions ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, mentions: event.target.value || undefined }))}><option value="">Anyone</option>{usersQuery.data?.map((user) => <option key={user.id} value={user.username}>@{user.username}</option>)}</select></label>
+                            <div className="search-checks"><label><input type="checkbox" checked={Boolean(searchFilters.hasLink)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasLink: event.target.checked }))} /> Links</label><label><input type="checkbox" checked={Boolean(searchFilters.hasAttachment)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasAttachment: event.target.checked }))} /> Attachments</label></div>
+                            <button className="button button-primary search-wide" type="submit">Search</button>
+                        </form>
+                        <div className="search-results" aria-live="polite">
+                            {searchQuery.isPending && submittedSearch && <p className="muted">Searching…</p>}
+                            {searchQuery.isError && <p className="error">{(searchQuery.error as Error).message}</p>}
+                            {searchQuery.data?.pages.flatMap((page) => page.messages).map((result) => <button className="search-result" type="button" key={result.id} onClick={() => openSearchResult(result)}><span className="muted">{result.roomName ? `${result.roomName} / ` : ""}{result.threadTitle} · @{result.username} · {new Date(result.createdAt).toLocaleString()}</span><span>{result.body}</span></button>)}
+                            {searchQuery.data && searchQuery.data.pages[0].messages.length === 0 && <p className="muted">No messages found.</p>}
+                            {searchQuery.hasNextPage && <button className="button" type="button" disabled={searchQuery.isFetchingNextPage} onClick={() => void searchQuery.fetchNextPage()}>{searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}</button>}
+                        </div>
+                    </div>
+                </div>
+            )}
             <aside className="sidebar">
                 <div className="sidebar-header">
                     <div className="sidebar-profile">
@@ -1480,6 +1554,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                     </div>
 
                         <div className="sidebar-header-actions">
+                            <button type="button" className="icon-button" onClick={() => setSearchOpen(true)} aria-label="Search messages" title="Search messages">⌕</button>
                             <button
                                 type="button"
                                 className="icon-button"
@@ -1740,15 +1815,15 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                 <h2>
                                     {!activeThread
                                         ? "No thread selected"
-                                        : sidebarMode === "whispers"
+                                        : activeThread.kind === "whisper"
                                             ? activeThread.title
-                                            : `${activeThread.title} · ${activeRoom?.name ?? "No room"}`
+                                            : activeThread.roomId ? `${activeThread.title} · ${activeRoom?.name ?? "No room"}` : activeThread.title
                                     }
                                 </h2>
                                 <p className="muted">
-                                    {sidebarMode === "whispers"
+                                    {activeThread.kind === "whisper"
                                         ? "private whisper"
-                                        : activeRoom
+                                        : !activeThread.roomId ? "thread" : activeRoom
                                             ? `room: ${activeRoom.name}`
                                             : "pick a room thread or create one"}
                                 </p>
@@ -1777,7 +1852,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                             }}
                                             className={[
                                                 "message-line",
-                                                grouped ? "message-line-grouped" : ""
+                                                grouped ? "message-line-grouped" : "",
+                                                searchTarget?.messageId === message.id ? "message-line-search-target" : ""
                                             ].filter(Boolean).join(" ")}
                                             onContextMenu={(event) => {
                                                 event.preventDefault();

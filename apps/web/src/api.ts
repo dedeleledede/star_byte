@@ -51,6 +51,26 @@ export interface Message {
   createdAt: string;
 }
 
+export interface SearchMessage extends Message {
+  threadTitle: string;
+  threadKind: "text" | "whisper";
+  roomId: string | null;
+  roomName: string | null;
+}
+
+export interface MessageSearchFilters {
+  q?: string;
+  userId?: string;
+  roomId?: string;
+  threadId?: string;
+  after?: string;
+  before?: string;
+  tag?: string;
+  hasLink?: boolean;
+  hasAttachment?: boolean;
+  mentions?: string;
+}
+
 export interface Room {
   id: string;
   name: string;
@@ -264,8 +284,17 @@ export function createTextThread(input: { title: string; roomId: string }) {
   });
 }
 
-export function fetchMessages(threadId: string) {
-  return request<{ messages: Message[] }>(`/api/threads/${threadId}/messages`);
+export function fetchMessages(threadId: string, through?: string) {
+  return request<{ messages: Message[] }>(`/api/threads/${threadId}/messages${through ? `?through=${encodeURIComponent(through)}` : ""}`);
+}
+
+export function searchMessages(filters: MessageSearchFilters, offset = 0) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "" && value !== false) params.set(key, String(value));
+  }
+  params.set("offset", String(offset));
+  return request<{ messages: SearchMessage[]; hasMore: boolean }>(`/api/messages/search?${params}`);
 }
 
 export function sendMessage(threadId: string, input: { body: string; replyToMessageId?: string | null }) {
