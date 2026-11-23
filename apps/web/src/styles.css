@@ -431,6 +431,17 @@ strong {
   letter-spacing: 0.03em;
 }
 
+.chat-header, .room-search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-header-copy { min-width: 0; }
+.chat-header-copy h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-compact-button { display: none; }
+
 .messages {
   min-height: 0;
   overflow-y: auto;
@@ -828,6 +839,8 @@ strong {
   .room-users-panel {
     display: none;
   }
+
+  .search-compact-button { display: inline-block; }
 }
 
 .room-card:hover {

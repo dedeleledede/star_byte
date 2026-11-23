@@ -65,7 +65,6 @@ export interface MessageSearchFilters {
   threadId?: string;
   after?: string;
   before?: string;
-  tag?: string;
   hasLink?: boolean;
   hasAttachment?: boolean;
   mentions?: string;

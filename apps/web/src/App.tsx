@@ -396,6 +396,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [roomOverlayOpen, setRoomOverlayOpen] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchFilters, setSearchFilters] = useState<MessageSearchFilters>({});
+    const [searchContext, setSearchContext] = useState<{ roomId?: string; threadId?: string; label: string } | null>(null);
     const [submittedSearch, setSubmittedSearch] = useState<MessageSearchFilters | null>(null);
     const [searchTarget, setSearchTarget] = useState<{ threadId: string; messageId: string } | null>(null);
     const [searchThread, setSearchThread] = useState<Thread | null>(null);
@@ -414,6 +415,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
 
     const composerRef = useRef<HTMLInputElement | null>(null);
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
     const messagesRef = useRef<HTMLElement | null>(null);
     const messageRefs = useRef<Record<string, HTMLElement | null>>({});
     const stickToBottomRef = useRef(true);
@@ -449,12 +451,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         enabled: Boolean(activeRoomId),
         refetchInterval: 2000,
         refetchOnWindowFocus: true
-    });
-
-    const searchThreadsQuery = useQuery({
-        queryKey: ["threads", searchFilters.roomId],
-        queryFn: () => fetchThreads(searchFilters.roomId!).then((data) => data.threads),
-        enabled: searchOpen && Boolean(searchFilters.roomId)
     });
 
     const threads = threadsQuery.data ?? [];
@@ -894,6 +890,18 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         window.addEventListener("keydown", handleGlobalTyping);
         return () => window.removeEventListener("keydown", handleGlobalTyping);
     }, [screen, activeThread, roomOverlayOpen, selectedUserProfile, accountMenuOpen]);
+
+    useEffect(() => {
+        function handleSearchShortcut(event: KeyboardEvent) {
+            if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "f") return;
+            if (screen !== "thread" || !activeThread || roomOverlayOpen) return;
+            event.preventDefault();
+            if (searchOpen) searchInputRef.current?.focus();
+            else openSearch();
+        }
+        window.addEventListener("keydown", handleSearchShortcut);
+        return () => window.removeEventListener("keydown", handleSearchShortcut);
+    }, [screen, activeThread, activeRoom, roomOverlayOpen, searchOpen]);
 
     useEffect(() => {
         function handleKeyboardNavigation(event: KeyboardEvent) {
@@ -1340,6 +1348,17 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         setSearchOpen(false);
     }
 
+    function openSearch() {
+        if (!activeThread) return;
+        const context = activeThread.kind === "whisper" || !activeThread.roomId
+            ? { threadId: activeThread.id, label: activeThread.title }
+            : { roomId: activeThread.roomId, label: activeRoom?.name ?? "Room" };
+        setSearchContext(context);
+        setSearchFilters({});
+        setSubmittedSearch(null);
+        setSearchOpen(true);
+    }
+
     function openUserProfileFromId(userId: string) {
         const user = usersById.get(userId);
         if (!user) return;
@@ -1516,18 +1535,16 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 <div className="overlay-backdrop" onClick={() => setSearchOpen(false)}>
                     <div className="overlay-panel search-overlay" role="dialog" aria-modal="true" aria-label="Search messages" onClick={(event) => event.stopPropagation()}>
                         <div className="room-overlay-header">
-                            <strong>Search messages</strong>
+                            <strong>Search in {searchContext?.label}</strong>
                             <button className="button" type="button" onClick={() => setSearchOpen(false)}>Close</button>
                         </div>
-                        <form className="search-form" onSubmit={(event) => { event.preventDefault(); setSubmittedSearch({ ...searchFilters, q: searchFilters.q?.trim() }); }}>
-                            <label className="stack search-wide"><span>Text</span><input autoFocus placeholder="Search message text" value={searchFilters.q ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, q: event.target.value }))} /></label>
-                            <label className="stack"><span>User</span><select value={searchFilters.userId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, userId: event.target.value || undefined }))}><option value="">Any user</option>{usersQuery.data?.map((user) => <option key={user.id} value={user.id}>@{user.username}</option>)}</select></label>
-                            <label className="stack"><span>Room</span><select value={searchFilters.roomId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, roomId: event.target.value || undefined, threadId: undefined }))}><option value="">Any room or whisper</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>
-                            <label className="stack"><span>Thread</span><select value={searchFilters.threadId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, threadId: event.target.value || undefined }))}><option value="">Any thread</option>{(searchFilters.roomId ? searchThreadsQuery.data ?? [] : whispers).map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select></label>
-                            <label className="stack"><span>Tag</span><input placeholder="#tag" value={searchFilters.tag ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, tag: event.target.value.replace(/^#/, "") }))} pattern="[a-zA-Z0-9_]*" /></label>
+                        <form className="search-form" onSubmit={(event) => { event.preventDefault(); if (searchContext) setSubmittedSearch({ ...searchFilters, roomId: searchContext.roomId, threadId: searchContext.roomId ? searchFilters.threadId : searchContext.threadId, q: searchFilters.q?.trim() }); }}>
+                            <label className="stack search-wide"><span>Text</span><input ref={searchInputRef} autoFocus placeholder="Search message text" value={searchFilters.q ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, q: event.target.value }))} /></label>
+                            <label className="stack"><span>User</span><select value={searchFilters.userId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, userId: event.target.value || undefined }))}><option value="">Any user</option>{sidePanelUsers.map((user) => <option key={user.id} value={user.id}>@{user.username}</option>)}</select></label>
+                            {searchContext?.roomId && <label className="stack"><span>Thread</span><select value={searchFilters.threadId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, threadId: event.target.value || undefined }))}><option value="">All threads</option>{roomThreads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select></label>}
                             <label className="stack"><span>From date</span><input type="date" value={searchFilters.after ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, after: event.target.value || undefined }))} /></label>
                             <label className="stack"><span>Through date</span><input type="date" value={searchFilters.before ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, before: event.target.value || undefined }))} /></label>
-                            <label className="stack"><span>Mentions</span><select value={searchFilters.mentions ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, mentions: event.target.value || undefined }))}><option value="">Anyone</option>{usersQuery.data?.map((user) => <option key={user.id} value={user.username}>@{user.username}</option>)}</select></label>
+                            <label className="stack"><span>Mentions</span><select value={searchFilters.mentions ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, mentions: event.target.value || undefined }))}><option value="">Anyone</option>{sidePanelUsers.map((user) => <option key={user.id} value={user.username}>@{user.username}</option>)}</select></label>
                             <div className="search-checks"><label><input type="checkbox" checked={Boolean(searchFilters.hasLink)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasLink: event.target.checked }))} /> Links</label><label><input type="checkbox" checked={Boolean(searchFilters.hasAttachment)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasAttachment: event.target.checked }))} /> Attachments</label></div>
                             <button className="button button-primary search-wide" type="submit">Search</button>
                         </form>
@@ -1558,7 +1575,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                     </div>
 
                         <div className="sidebar-header-actions">
-                            <button type="button" className="icon-button" onClick={() => setSearchOpen(true)} aria-label="Search messages" title="Search messages">⌕</button>
                             <button
                                 type="button"
                                 className="icon-button"
@@ -1815,22 +1831,22 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                         </>
                     ) : (
                         <>
-                            <header className="thread-header">
-                                <h2>
-                                    {!activeThread
-                                        ? "No thread selected"
-                                        : activeThread.kind === "whisper"
+                            <header className="thread-header chat-header">
+                                <div className="chat-header-copy">
+                                    <h2>
+                                        {activeThread.kind === "whisper"
                                             ? activeThread.title
-                                            : activeThread.roomId ? `${activeThread.title} · ${activeRoom?.name ?? "No room"}` : activeThread.title
-                                    }
-                                </h2>
-                                <p className="muted">
-                                    {activeThread.kind === "whisper"
-                                        ? "private whisper"
-                                        : !activeThread.roomId ? "thread" : activeRoom
-                                            ? `room: ${activeRoom.name}`
-                                            : "pick a room thread or create one"}
-                                </p>
+                                            : activeThread.roomId ? `${activeThread.title} · ${activeRoom?.name ?? "No room"}` : activeThread.title}
+                                    </h2>
+                                    <p className="muted">
+                                        {activeThread.kind === "whisper"
+                                            ? "private whisper"
+                                            : !activeThread.roomId ? "thread" : activeRoom
+                                                ? `room: ${activeRoom.name}`
+                                                : "pick a room thread or create one"}
+                                    </p>
+                                </div>
+                                <button className="button search-compact-button" type="button" onClick={openSearch}>Search</button>
                             </header>
 
                             <section
@@ -2191,11 +2207,12 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             )}
             {activeThread && (
                 <aside className="room-users-panel">
-                    <div className="thread-header">
-                        <h2>{sidebarMode === "whispers" ? activeThread.title : activeRoom?.name ?? "No room selected"}</h2>
-                        <p className="muted">
-                            {sidebarMode === "whispers" ? "whisper participants" : "room users"}
-                        </p>
+                    <div className="thread-header room-search-header">
+                        <div className="chat-header-copy">
+                            <h2>{activeThread.kind === "whisper" || !activeThread.roomId ? activeThread.title : activeRoom?.name ?? "No room selected"}</h2>
+                            <p className="muted">{activeThread.kind === "whisper" ? "whisper participants" : "room users"}</p>
+                        </div>
+                        {screen === "thread" && <button className="button" type="button" onClick={openSearch}>Search</button>}
                     </div>
 
                     <div className="room-user-list">
