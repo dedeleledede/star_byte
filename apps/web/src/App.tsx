@@ -1,6 +1,7 @@
 import {
     SyntheticEvent,
     useMemo,
+    useId,
     useState,
     useEffect,
     useRef,
@@ -215,6 +216,98 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
 
 function avatarInitial(name?: string) {
     return (name?.trim()?.charAt(0) || "?").toUpperCase();
+}
+
+function SearchUserPicker({ label, users, value, valueKey, onChange }: {
+    label: string;
+    users: Array<Pick<User, "id" | "username" | "displayName">>;
+    value?: string;
+    valueKey: "id" | "username";
+    onChange: (value?: string) => void;
+}) {
+    const inputId = useId();
+    const listId = `${inputId}-options`;
+    const pickerRef = useRef<HTMLDivElement | null>(null);
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState("");
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const selected = users.find((user) => user[valueKey] === value);
+    const term = query.trim().replace(/^@/, "").toLowerCase();
+    const matches = users.filter((user) =>
+        user.username.toLowerCase().includes(term) || user.displayName.toLowerCase().includes(term)
+    ).sort((left, right) => {
+        const rank = (user: typeof left) => !term || user.username.toLowerCase().startsWith(term) ? 0
+            : user.displayName.toLowerCase().startsWith(term) ? 1
+                : user.username.toLowerCase().includes(term) ? 2 : 3;
+        return rank(left) - rank(right) || left.username.localeCompare(right.username);
+    });
+
+    useEffect(() => {
+        if (!open) return;
+        function closeOutside(event: MouseEvent) {
+            if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+        }
+        document.addEventListener("mousedown", closeOutside);
+        return () => document.removeEventListener("mousedown", closeOutside);
+    }, [open]);
+
+    function choose(user: (typeof users)[number]) {
+        onChange(user[valueKey]);
+        setQuery("");
+        setOpen(false);
+    }
+
+    return (
+        <div className="stack search-user-picker" ref={pickerRef}>
+            <label htmlFor={inputId}>{label}</label>
+            <input
+                id={inputId}
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={open}
+                aria-controls={listId}
+                aria-activedescendant={open && matches.length ? `${listId}-${selectedIndex}` : undefined}
+                placeholder={label === "Mentions" ? "Anyone" : "Any user"}
+                value={open ? query : selected ? `@${selected.username}` : ""}
+                onFocus={() => { setQuery(""); setSelectedIndex(0); setOpen(true); }}
+                onClick={() => { if (!open) { setQuery(""); setSelectedIndex(0); setOpen(true); } }}
+                onChange={(event) => { setQuery(event.target.value); setSelectedIndex(0); onChange(undefined); setOpen(true); }}
+                onBlur={(event) => { if (!pickerRef.current?.contains(event.relatedTarget as Node)) setOpen(false); }}
+                onKeyDown={(event) => {
+                    if (!open) return;
+                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                        event.preventDefault();
+                        setSelectedIndex((index) => Math.max(0, Math.min(matches.length - 1, index + (event.key === "ArrowDown" ? 1 : -1))));
+                    } else if (event.key === "Enter") {
+                        event.preventDefault();
+                        if (matches.length) choose(matches[selectedIndex] ?? matches[0]);
+                    } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        setOpen(false);
+                    }
+                }}
+            />
+            {open && (
+                <div className="search-user-options" id={listId} role="listbox" aria-label={label}>
+                    {matches.length ? matches.map((user, index) => (
+                        <button
+                            key={user.id}
+                            id={`${listId}-${index}`}
+                            role="option"
+                            aria-selected={index === selectedIndex}
+                            className={index === selectedIndex ? "search-user-option search-user-option-active" : "search-user-option"}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => choose(user)}
+                        >
+                            <strong>@{user.username}</strong><span className="muted">{user.displayName}</span>
+                        </button>
+                    )) : <div className="muted search-user-empty">No users found.</div>}
+                    {selected && <button className="search-user-option" type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(undefined); setOpen(false); }}>Clear selection</button>}
+                </div>
+            )}
+        </div>
+    );
 }
 
 function AvatarSquare({displayName, avatarUrl, size = "sm"}: {
@@ -1540,11 +1633,11 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                         </div>
                         <form className="search-form" onSubmit={(event) => { event.preventDefault(); if (searchContext) setSubmittedSearch({ ...searchFilters, roomId: searchContext.roomId, threadId: searchContext.roomId ? searchFilters.threadId : searchContext.threadId, q: searchFilters.q?.trim() }); }}>
                             <label className="stack search-wide"><span>Text</span><input ref={searchInputRef} autoFocus placeholder="Search message text" value={searchFilters.q ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, q: event.target.value }))} /></label>
-                            <label className="stack"><span>User</span><select value={searchFilters.userId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, userId: event.target.value || undefined }))}><option value="">Any user</option>{sidePanelUsers.map((user) => <option key={user.id} value={user.id}>@{user.username}</option>)}</select></label>
+                            <SearchUserPicker label="Sent from" users={sidePanelUsers} value={searchFilters.userId} valueKey="id" onChange={(userId) => setSearchFilters((filters) => ({ ...filters, userId }))} />
                             {searchContext?.roomId && <label className="stack"><span>Thread</span><select value={searchFilters.threadId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, threadId: event.target.value || undefined }))}><option value="">All threads</option>{roomThreads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select></label>}
                             <label className="stack"><span>From date</span><input type="date" value={searchFilters.after ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, after: event.target.value || undefined }))} /></label>
                             <label className="stack"><span>Through date</span><input type="date" value={searchFilters.before ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, before: event.target.value || undefined }))} /></label>
-                            <label className="stack"><span>Mentions</span><select value={searchFilters.mentions ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, mentions: event.target.value || undefined }))}><option value="">Anyone</option>{sidePanelUsers.map((user) => <option key={user.id} value={user.username}>@{user.username}</option>)}</select></label>
+                            <SearchUserPicker label="Mentions" users={sidePanelUsers} value={searchFilters.mentions} valueKey="username" onChange={(mentions) => setSearchFilters((filters) => ({ ...filters, mentions }))} />
                             <div className="search-checks"><label><input type="checkbox" checked={Boolean(searchFilters.hasLink)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasLink: event.target.checked }))} /> Links</label><label><input type="checkbox" checked={Boolean(searchFilters.hasAttachment)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasAttachment: event.target.checked }))} /> Attachments</label></div>
                             <button className="button button-primary search-wide" type="submit">Search</button>
                         </form>

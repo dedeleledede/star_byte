@@ -903,6 +903,33 @@ strong {
 
 .search-wide { grid-column: 1 / -1; }
 .search-form input, .search-form select { width: 100%; min-width: 0; }
+.search-user-picker { position: relative; min-width: 0; }
+.search-user-picker:focus-within { z-index: 3; }
+.search-user-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: min(260px, 40vh);
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.search-user-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.search-user-option:hover, .search-user-option-active { background: var(--button-hover); }
+.search-user-empty { padding: 8px 10px; }
 .search-checks { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .search-checks label { display: flex; gap: 5px; align-items: center; }
 .search-checks input { width: auto; }
