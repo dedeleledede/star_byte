@@ -486,9 +486,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         enabled: Boolean(activeThread?.id)
     });
 
+    const focusedMessageId = searchTarget && activeThread?.id === searchTarget.threadId
+        ? searchTarget.messageId
+        : null;
+
     const messagesQuery = useQuery({
-        queryKey: ["messages", activeThread?.id, searchTarget?.threadId === activeThread?.id ? searchTarget.messageId : null],
-        queryFn: () => fetchMessages(activeThread!.id, searchTarget?.threadId === activeThread?.id ? searchTarget.messageId : undefined).then((data) => data.messages),
+        queryKey: ["messages", activeThread?.id, focusedMessageId],
+        queryFn: () => fetchMessages(activeThread!.id, focusedMessageId ?? undefined).then((data) => data.messages),
         enabled: Boolean(activeThread?.id),
         refetchInterval: 2000,
         refetchOnWindowFocus: true
