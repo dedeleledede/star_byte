@@ -41,6 +41,28 @@ export interface MessageRecord {
   createdAt: string;
 }
 
+export interface SearchMessageRecord extends MessageRecord {
+  threadTitle: string;
+  threadKind: "text" | "whisper";
+  roomId: string | null;
+  roomName: string | null;
+}
+
+export interface MessageSearchFilters {
+  query?: string;
+  userId?: string;
+  roomId?: string;
+  threadId?: string;
+  after?: string;
+  before?: string;
+  tag?: string;
+  hasLink?: boolean;
+  hasAttachment?: boolean;
+  mentions?: string;
+  limit: number;
+  offset: number;
+}
+
 export interface ThreadMemberRecord {
   id: string;
   username: string;
@@ -79,6 +101,10 @@ export class DatabaseService {
     this.db = new Database(filePath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
+    this.db.function("has_tag", (body: string, tag: string) => new RegExp(`(?:^|[^\\w])#${tag}(?![\\w])`, "i").test(body) ? 1 : 0);
+    this.db.function("has_mention", (body: string, username: string) => new RegExp(`(?:^|[^\\w])@${username}(?![\\w])`, "i").test(body) ? 1 : 0);
+    this.db.function("has_link", (body: string) => /https?:\/\/\S+|starbyte:\/\/\d{4}-\d{4}/i.test(body) ? 1 : 0);
+    this.db.function("has_attachment", (body: string) => /\/api\/uploads\/images\/[a-f0-9-]+\.(?:png|jpg|gif|webp)(?![\w])/i.test(body) ? 1 : 0);
   }
 
   init() {
@@ -603,6 +629,60 @@ export class DatabaseService {
       ORDER BY m.created_at DESC
       LIMIT ?
     `).all(threadId, limit) as MessageRecord[];
+  }
+
+  listMessagesThrough(threadId: string, messageId: string) {
+    const target = this.getMessageById(messageId);
+    if (!target || target.threadId !== threadId) return null;
+    return this.db.prepare(`
+      SELECT m.id, m.thread_id as threadId, m.user_id as userId,
+        u.username, u.display_name as displayName, u.avatar_url as avatarUrl,
+        m.body, m.reply_to_message_id as replyToMessageId,
+        m.edited_at as editedAt, m.created_at as createdAt
+      FROM messages m JOIN users u ON u.id = m.user_id
+      WHERE m.thread_id = ? AND m.deleted_at IS NULL
+        AND (m.created_at < ? OR (m.created_at = ? AND m.rowid <= (SELECT rowid FROM messages WHERE id = ?)))
+      ORDER BY m.created_at DESC, m.rowid DESC LIMIT 50
+    `).all(threadId, target.createdAt, target.createdAt, messageId) as MessageRecord[];
+  }
+
+  searchMessages(viewerId: string, filters: MessageSearchFilters) {
+    const clauses = [
+      "m.deleted_at IS NULL",
+      `((t.kind = 'text' AND t.room_id IS NOT NULL AND EXISTS
+        (SELECT 1 FROM room_members rm WHERE rm.room_id = t.room_id AND rm.user_id = @viewerId))
+        OR (t.kind = 'whisper' AND EXISTS
+        (SELECT 1 FROM thread_members tm WHERE tm.thread_id = t.id AND tm.user_id = @viewerId))
+        OR (t.kind = 'text' AND t.room_id IS NULL AND EXISTS
+        (SELECT 1 FROM thread_members tm WHERE tm.thread_id = t.id AND tm.user_id = @viewerId)))`
+    ];
+    const params: Record<string, string | number> = { viewerId, limit: filters.limit, offset: filters.offset };
+    if (filters.query) {
+      clauses.push("m.body LIKE @query ESCAPE '\\' COLLATE NOCASE");
+      params.query = `%${filters.query.replace(/[\\%_]/g, "\\$&")}%`;
+    }
+    if (filters.userId) { clauses.push("m.user_id = @userId"); params.userId = filters.userId; }
+    if (filters.roomId) { clauses.push("t.room_id = @roomId"); params.roomId = filters.roomId; }
+    if (filters.threadId) { clauses.push("t.id = @threadId"); params.threadId = filters.threadId; }
+    if (filters.after) { clauses.push("m.created_at >= @after"); params.after = filters.after; }
+    if (filters.before) { clauses.push("m.created_at < @before"); params.before = filters.before; }
+    if (filters.tag) { clauses.push("has_tag(m.body, @tag) = 1"); params.tag = filters.tag; }
+    if (filters.hasLink) clauses.push("has_link(m.body) = 1");
+    if (filters.hasAttachment) clauses.push("has_attachment(m.body) = 1");
+    if (filters.mentions) { clauses.push("has_mention(m.body, @mentions) = 1"); params.mentions = filters.mentions; }
+    return this.db.prepare(`
+      SELECT m.id, m.thread_id as threadId, m.user_id as userId,
+        u.username, u.display_name as displayName, u.avatar_url as avatarUrl,
+        m.body, m.reply_to_message_id as replyToMessageId,
+        m.edited_at as editedAt, m.created_at as createdAt,
+        t.title as threadTitle, t.kind as threadKind,
+        t.room_id as roomId, r.name as roomName
+      FROM messages m JOIN users u ON u.id = m.user_id
+      JOIN threads t ON t.id = m.thread_id
+      LEFT JOIN rooms r ON r.id = t.room_id
+      WHERE ${clauses.join(" AND ")}
+      ORDER BY m.created_at DESC, m.rowid DESC LIMIT @limit OFFSET @offset
+    `).all(params) as SearchMessageRecord[];
   }
 
   listUsers() {
