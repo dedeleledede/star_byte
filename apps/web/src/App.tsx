@@ -310,6 +310,86 @@ function SearchUserPicker({ label, users, value, valueKey, onChange }: {
     );
 }
 
+function SearchDatePicker({ label, value, onChange }: {
+    label: string;
+    value?: string;
+    onChange: (value?: string) => void;
+}) {
+    const pickerRef = useRef<HTMLDivElement | null>(null);
+    const triggerRef = useRef<HTMLButtonElement | null>(null);
+    const [open, setOpen] = useState(false);
+    const [viewMonth, setViewMonth] = useState(() => {
+        const date = value ? new Date(`${value}T12:00:00`) : new Date();
+        return new Date(date.getFullYear(), date.getMonth(), 1);
+    });
+    const year = viewMonth.getFullYear();
+    const month = viewMonth.getMonth();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const thisYear = new Date().getFullYear();
+    const firstYear = Math.min(thisYear - 100, year);
+    const lastYear = Math.max(thisYear + 10, year);
+    const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
+    const months = Array.from({ length: 12 }, (_, index) => new Date(2020, index, 1).toLocaleString(undefined, { month: "long" }));
+
+    useEffect(() => {
+        if (!open) return;
+        function closeOutside(event: MouseEvent) {
+            if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+        }
+        function closeOnEscape(event: KeyboardEvent) {
+            if (event.key === "Escape") setOpen(false);
+        }
+        document.addEventListener("mousedown", closeOutside);
+        document.addEventListener("keydown", closeOnEscape);
+        return () => {
+            document.removeEventListener("mousedown", closeOutside);
+            document.removeEventListener("keydown", closeOnEscape);
+        };
+    }, [open]);
+
+    function choose(day: number) {
+        onChange(`${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+        setOpen(false);
+        triggerRef.current?.focus();
+    }
+
+    return (
+        <div className="stack search-date-picker" ref={pickerRef}>
+            <span>{label}</span>
+            <div className="search-date-field">
+                <button ref={triggerRef} className="button search-date-trigger" type="button" aria-expanded={open} aria-label={`${label}: ${value ?? "any date"}`} onClick={() => setOpen((current) => !current)}>
+                    {value ? new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Any date"}
+                </button>
+                {value && <button className="button" type="button" aria-label={`Clear ${label.toLowerCase()}`} onClick={() => { onChange(undefined); setOpen(false); }}>Clear</button>}
+            </div>
+            {open && (
+                <div className="search-calendar" aria-label={`${label} calendar`}>
+                    <div className="search-calendar-heading">
+                        <button className="button" type="button" aria-label="Previous month" onClick={() => setViewMonth(new Date(year, month - 1, 1))}>‹</button>
+                        <select aria-label="Month" value={month} onChange={(event) => setViewMonth(new Date(year, Number(event.target.value), 1))}>
+                            {months.map((name, index) => <option key={name} value={index}>{name}</option>)}
+                        </select>
+                        <select aria-label="Year" value={year} onChange={(event) => setViewMonth(new Date(Number(event.target.value), month, 1))}>
+                            {years.map((item) => <option key={item} value={item}>{item}</option>)}
+                        </select>
+                        <button className="button" type="button" aria-label="Next month" onClick={() => setViewMonth(new Date(year, month + 1, 1))}>›</button>
+                    </div>
+                    <div className="search-calendar-days">
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span className="muted" key={day}>{day}</span>)}
+                        {Array.from({ length: firstWeekday }, (_, index) => <span key={`blank-${index}`} />)}
+                        {Array.from({ length: daysInMonth }, (_, index) => {
+                            const day = index + 1;
+                            const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                            return <button className={date === value ? "search-calendar-day search-calendar-day-selected" : "search-calendar-day"} key={day} type="button" aria-label={date} aria-pressed={date === value} onClick={() => choose(day)}>{day}</button>;
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function AvatarSquare({displayName, avatarUrl, size = "sm"}: {
     displayName: string;
     avatarUrl?: string | null;
@@ -1635,8 +1715,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             <label className="stack search-wide"><span>Text</span><input ref={searchInputRef} autoFocus placeholder="Search message text" value={searchFilters.q ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, q: event.target.value }))} /></label>
                             <SearchUserPicker label="Sent from" users={sidePanelUsers} value={searchFilters.userId} valueKey="id" onChange={(userId) => setSearchFilters((filters) => ({ ...filters, userId }))} />
                             {searchContext?.roomId && <label className="stack"><span>Thread</span><select value={searchFilters.threadId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, threadId: event.target.value || undefined }))}><option value="">All threads</option>{roomThreads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select></label>}
-                            <label className="stack"><span>From date</span><input type="date" value={searchFilters.after ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, after: event.target.value || undefined }))} /></label>
-                            <label className="stack"><span>Through date</span><input type="date" value={searchFilters.before ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, before: event.target.value || undefined }))} /></label>
+                            <SearchDatePicker label="From date" value={searchFilters.after} onChange={(after) => setSearchFilters((filters) => ({ ...filters, after }))} />
+                            <SearchDatePicker label="Through date" value={searchFilters.before} onChange={(before) => setSearchFilters((filters) => ({ ...filters, before }))} />
                             <SearchUserPicker label="Mentions" users={sidePanelUsers} value={searchFilters.mentions} valueKey="username" onChange={(mentions) => setSearchFilters((filters) => ({ ...filters, mentions }))} />
                             <div className="search-checks"><label><input type="checkbox" checked={Boolean(searchFilters.hasLink)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasLink: event.target.checked }))} /> Links</label><label><input type="checkbox" checked={Boolean(searchFilters.hasAttachment)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasAttachment: event.target.checked }))} /> Attachments</label></div>
                             <button className="button button-primary search-wide" type="submit">Search</button>
