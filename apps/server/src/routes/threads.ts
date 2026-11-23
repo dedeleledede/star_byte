@@ -47,14 +47,22 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
       threadId: z.string().min(1).max(100).optional(),
       after: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       before: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      tag: z.string().regex(/^[a-zA-Z0-9_]{1,50}$/).optional(),
       hasLink: z.enum(["true", "false"]).optional(),
       hasAttachment: z.enum(["true", "false"]).optional(),
       mentions: z.string().regex(/^[a-zA-Z0-9_]{3,20}$/).optional(),
       offset: z.coerce.number().int().min(0).max(10000).default(0)
-    }).safeParse(request.query);
+    }).strict().safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "invalid search filters" });
-    const { after, before, q, tag, offset, ...rest } = parsed.data;
+    const { after, before, q, offset, ...rest } = parsed.data;
+    if (!rest.roomId && !rest.threadId) {
+      return reply.code(400).send({ error: "select a search scope" });
+    }
+    if (rest.roomId && !app.db.isRoomMember(rest.roomId, request.currentUser!.id)) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+    if (rest.threadId && !app.db.canAccessThread(rest.threadId, request.currentUser!.id)) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
     const date = (value: string | undefined, nextDay: boolean) => {
       if (!value) return undefined;
       const parsedDate = new Date(`${value}T00:00:00.000Z`);
@@ -67,7 +75,7 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
     if (start === null || end === null) return reply.code(400).send({ error: "invalid search filters" });
     const messages = app.db.searchMessages(request.currentUser!.id, {
       ...rest,
-      query: q?.trim(), tag,
+      query: q?.trim(),
       after: start, before: end,
       hasLink: rest.hasLink === "true",
       hasAttachment: rest.hasAttachment === "true",

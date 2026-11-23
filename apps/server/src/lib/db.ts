@@ -55,7 +55,6 @@ export interface MessageSearchFilters {
   threadId?: string;
   after?: string;
   before?: string;
-  tag?: string;
   hasLink?: boolean;
   hasAttachment?: boolean;
   mentions?: string;
@@ -101,7 +100,6 @@ export class DatabaseService {
     this.db = new Database(filePath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
-    this.db.function("has_tag", (body: string, tag: string) => new RegExp(`(?:^|[^\\w])#${tag}(?![\\w])`, "i").test(body) ? 1 : 0);
     this.db.function("has_mention", (body: string, username: string) => new RegExp(`(?:^|[^\\w])@${username}(?![\\w])`, "i").test(body) ? 1 : 0);
     this.db.function("has_link", (body: string) => /https?:\/\/\S+|starbyte:\/\/\d{4}-\d{4}/i.test(body) ? 1 : 0);
     this.db.function("has_attachment", (body: string) => /\/api\/uploads\/images\/[a-f0-9-]+\.(?:png|jpg|gif|webp)(?![\w])/i.test(body) ? 1 : 0);
@@ -666,7 +664,6 @@ export class DatabaseService {
     if (filters.threadId) { clauses.push("t.id = @threadId"); params.threadId = filters.threadId; }
     if (filters.after) { clauses.push("m.created_at >= @after"); params.after = filters.after; }
     if (filters.before) { clauses.push("m.created_at < @before"); params.before = filters.before; }
-    if (filters.tag) { clauses.push("has_tag(m.body, @tag) = 1"); params.tag = filters.tag; }
     if (filters.hasLink) clauses.push("has_link(m.body) = 1");
     if (filters.hasAttachment) clauses.push("has_attachment(m.body) = 1");
     if (filters.mentions) { clauses.push("has_mention(m.body, @mentions) = 1"); params.mentions = filters.mentions; }
