@@ -2308,54 +2308,57 @@ const updateProfileMutation = useMutation({
                                         </button>
                                     </div>
                                 )}
-                                <button
-                                    type="button"
-                                    className={`button ${isPlainText ? "button-primary" : ""}`}
-                                    style={{ padding: "4px 8px", fontSize: "0.8rem" }}
-                                    onClick={() => setIsPlainText(!isPlainText)}
-                                    title="Alternar Modo de Texto Simples"
-                                >
-                                    {isPlainText ? "Modo Normal" : "Modo Texto"}
-                                </button>
-                                <input
-                                    ref={composerRef}
-                                    value={draft}
-                                    onChange={(event) => {
-                                        const next = event.target.value;
-                                        setDraft(next);
-                                        updateMentionState(next, event.target.selectionStart ?? next.length);
-                                    }}
-                                    onKeyDown={(event) => {
-                                        if (!mentionOpen || mentionSuggestions.length === 0) return;
+                                <div className="composer-input-col">
+                                    <input
+                                        ref={composerRef}
+                                        value={draft}
+                                        onChange={(event) => {
+                                            const next = event.target.value;
+                                            setDraft(next);
+                                            updateMentionState(next, event.target.selectionStart ?? next.length);
+                                        }}
+                                        onKeyDown={(event) => {
+                                            if (!mentionOpen || mentionSuggestions.length === 0) return;
 
-                                        if (event.key === "ArrowDown") {
-                                            event.preventDefault();
-                                            setSelectedMentionIndex((value) =>
-                                                Math.min(value + 1, mentionSuggestions.length - 1)
-                                            );
-                                            return;
-                                        }
+                                            if (event.key === "ArrowDown") {
+                                                event.preventDefault();
+                                                setSelectedMentionIndex((value) =>
+                                                    Math.min(value + 1, mentionSuggestions.length - 1)
+                                                );
+                                                return;
+                                            }
 
-                                        if (event.key === "ArrowUp") {
-                                            event.preventDefault();
-                                            setSelectedMentionIndex((value) => Math.max(value - 1, 0));
-                                            return;
-                                        }
+                                            if (event.key === "ArrowUp") {
+                                                event.preventDefault();
+                                                setSelectedMentionIndex((value) => Math.max(value - 1, 0));
+                                                return;
+                                            }
 
-                                        if (event.key === "Enter" || event.key === "Tab") {
-                                            event.preventDefault();
-                                            insertMention(mentionSuggestions[selectedMentionIndex].username);
-                                            return;
-                                        }
+                                            if (event.key === "Enter" || event.key === "Tab") {
+                                                event.preventDefault();
+                                                insertMention(mentionSuggestions[selectedMentionIndex].username);
+                                                return;
+                                            }
 
-                                        if (event.key === "Escape") {
-                                            event.preventDefault();
-                                            setMentionOpen(false);
-                                            return;
-                                        }
-                                    }}
-                                    placeholder="Write a message"
-                                />
+                                            if (event.key === "Escape") {
+                                                event.preventDefault();
+                                                setMentionOpen(false);
+                                                return;
+                                            }
+                                        }}
+                                        placeholder="Write a message"
+                                    />
+                                    <div className="composer-input-tools">
+                                        <button
+                                            type="button"
+                                            className={`button text-mode-toggle-button ${isPlainText ? "button-primary" : ""}`}
+                                            onClick={() => setIsPlainText(!isPlainText)}
+                                            title="Alternar Modo de Texto Simples"
+                                        >
+                                            {isPlainText ? "Modo Normal" : "Modo Texto"}
+                                        </button>
+                                    </div>
+                                </div>
 
                                 {mentionOpen && mentionSuggestions.length > 0 && (
                                     <div className="mention-picker">
