@@ -77,6 +77,17 @@ export interface RoomRecord {
   createdAt: string;
 }
 
+export interface SessionRecord {
+  id: string;
+  userId: string;
+  deviceName: string;
+  userAgent: string;
+  ipAddress: string;
+  createdAt: string;
+  lastActiveAt: string;
+  revokedAt: string | null;
+}
+
 export class DatabaseService {
   private readonly db: Database.Database;
 
@@ -176,6 +187,20 @@ export class DatabaseService {
         FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        device_name TEXT NOT NULL,
+        user_agent TEXT NOT NULL DEFAULT '',
+        ip_address TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        last_active_at TEXT NOT NULL,
+        revoked_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     `);
 
     // ensures
@@ -940,6 +965,158 @@ export class DatabaseService {
     this.addMemberToThread(thread.id, input.targetUserId, "member");
 
     return thread;
+  }
+
+  createSession(input: {
+    userId: string;
+    deviceName: string;
+    userAgent: string;
+    ipAddress: string;
+  }) {
+    const now = new Date().toISOString();
+    const session: SessionRecord = {
+      id: randomUUID(),
+      userId: input.userId,
+      deviceName: input.deviceName,
+      userAgent: input.userAgent,
+      ipAddress: input.ipAddress,
+      createdAt: now,
+      lastActiveAt: now,
+      revokedAt: null
+    };
+
+    this.db.prepare(`
+      INSERT INTO sessions (id, user_id, device_name, user_agent, ip_address, created_at, last_active_at, revoked_at)
+      VALUES (@id, @userId, @deviceName, @userAgent, @ipAddress, @createdAt, @lastActiveAt, @revokedAt)
+    `).run(session);
+
+    return session;
+  }
+
+  findSessionById(sessionId: string) {
+    return this.db.prepare(`
+      SELECT
+        id,
+        user_id as userId,
+        device_name as deviceName,
+        user_agent as userAgent,
+        ip_address as ipAddress,
+        created_at as createdAt,
+        last_active_at as lastActiveAt,
+        revoked_at as revokedAt
+      FROM sessions
+      WHERE id = ?
+    `).get(sessionId) as SessionRecord | undefined;
+  }
+
+  findActiveSessionById(sessionId: string) {
+    return this.db.prepare(`
+      SELECT
+        id,
+        user_id as userId,
+        device_name as deviceName,
+        user_agent as userAgent,
+        ip_address as ipAddress,
+        created_at as createdAt,
+        last_active_at as lastActiveAt,
+        revoked_at as revokedAt
+      FROM sessions
+      WHERE id = ? AND revoked_at IS NULL
+    `).get(sessionId) as SessionRecord | undefined;
+  }
+
+  listActiveSessionsForUser(userId: string) {
+    return this.db.prepare(`
+      SELECT
+        id,
+        user_id as userId,
+        device_name as deviceName,
+        user_agent as userAgent,
+        ip_address as ipAddress,
+        created_at as createdAt,
+        last_active_at as lastActiveAt,
+        revoked_at as revokedAt
+      FROM sessions
+      WHERE user_id = ? AND revoked_at IS NULL
+      ORDER BY last_active_at DESC, created_at DESC
+    `).all(userId) as SessionRecord[];
+  }
+
+  touchSession(sessionId: string, metadata?: { ipAddress?: string; userAgent?: string; deviceName?: string }) {
+    const now = new Date().toISOString();
+    if (metadata && (metadata.ipAddress !== undefined || metadata.userAgent !== undefined || metadata.deviceName !== undefined)) {
+      this.db.prepare(`
+        UPDATE sessions
+        SET last_active_at = ?,
+            ip_address = COALESCE(?, ip_address),
+            user_agent = COALESCE(?, user_agent),
+            device_name = COALESCE(?, device_name)
+        WHERE id = ? AND revoked_at IS NULL
+      `).run(
+        now,
+        metadata.ipAddress ?? null,
+        metadata.userAgent ?? null,
+        metadata.deviceName ?? null,
+        sessionId
+      );
+      return;
+    }
+
+    this.db.prepare(`
+      UPDATE sessions
+      SET last_active_at = ?
+      WHERE id = ? AND revoked_at IS NULL
+    `).run(now, sessionId);
+  }
+
+  touchSessionIfStale(session: SessionRecord, metadata?: { ipAddress?: string }, thresholdMs = 30000) {
+    const lastActiveMs = Date.parse(session.lastActiveAt);
+    const ipChanged = metadata?.ipAddress !== undefined && metadata.ipAddress !== "" && metadata.ipAddress !== session.ipAddress;
+    if (Number.isNaN(lastActiveMs) || Date.now() - lastActiveMs >= thresholdMs || ipChanged) {
+      this.touchSession(session.id, ipChanged ? { ipAddress: metadata?.ipAddress } : undefined);
+    }
+  }
+
+  revokeSession(sessionId: string, userId: string) {
+    const now = new Date().toISOString();
+    const result = this.db.prepare(`
+      UPDATE sessions
+      SET revoked_at = ?
+      WHERE id = ? AND user_id = ? AND revoked_at IS NULL
+    `).run(now, sessionId, userId);
+
+    return result.changes > 0;
+  }
+
+  revokeAllSessionsForUser(userId: string, exceptSessionId?: string) {
+    const now = new Date().toISOString();
+    const rows = exceptSessionId
+      ? (this.db.prepare(`
+          SELECT id FROM sessions
+          WHERE user_id = ? AND revoked_at IS NULL AND id <> ?
+        `).all(userId, exceptSessionId) as Array<{ id: string }>)
+      : (this.db.prepare(`
+          SELECT id FROM sessions
+          WHERE user_id = ? AND revoked_at IS NULL
+        `).all(userId) as Array<{ id: string }>);
+
+    if (rows.length === 0) return [];
+
+    if (exceptSessionId) {
+      this.db.prepare(`
+        UPDATE sessions
+        SET revoked_at = ?
+        WHERE user_id = ? AND revoked_at IS NULL AND id <> ?
+      `).run(now, userId, exceptSessionId);
+    } else {
+      this.db.prepare(`
+        UPDATE sessions
+        SET revoked_at = ?
+        WHERE user_id = ? AND revoked_at IS NULL
+      `).run(now, userId);
+    }
+
+    return rows.map((row) => row.id);
   }
 
   private toSafeUser(user: UserRecord): SafeUser {
