@@ -10,10 +10,12 @@ declare module "@fastify/jwt" {
     payload: {
       sub: string;
       username: string;
+      sid: string;
     };
     user: {
       sub: string;
       username: string;
+      sid: string;
     };
   }
 }
@@ -24,9 +26,11 @@ declare module "fastify" {
     ircBridge: IrcBridge;
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     wsClients: Map<string, Set<WebSocket>>;
+    wsSessionClients: Map<string, Set<WebSocket>>;
   }
 
   interface FastifyRequest {
     currentUser?: SafeUser;
+    currentSessionId?: string;
   }
 }

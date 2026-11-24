@@ -77,6 +77,16 @@ export interface RoomUser {
   isAvatarPublic?: number;
 }
 
+export interface Session {
+  id: string;
+  deviceName: string;
+  userAgent: string;
+  ipAddress: string;
+  createdAt: string;
+  lastActiveAt: string;
+  current: boolean;
+}
+
 export interface LinkEmbed {
   url: string;
   siteName: string | null;
@@ -176,7 +186,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     if (response.status === 401) {
       setToken(null);
-      window.dispatchEvent(new Event("star_byte-auth-invalid"));
+      window.dispatchEvent(new Event("starbyte-auth-invalid"));
     }
 
     const errorCode = typeof data?.error === "string" ? data.error : "";
@@ -195,7 +205,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       "target user not found": "Usuário não encontrado.",
       "image required": "Escolha uma imagem para enviar.",
       "invalid image type": "Envie uma imagem PNG, JPG, GIF ou WebP.",
-      "image too large": "A imagem deve ter no máximo 5 MB."
+      "image too large": "A imagem deve ter no máximo 5 MB.",
+      "session not found": "Sessão não encontrada.",
+      "invalid session": "Sua sessão foi encerrada."
     };
 
     if (response.status >= 500) {
@@ -212,17 +224,53 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+function getClientDeviceName() {
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    const ua = navigator.userAgent || "";
+    if (/Windows/i.test(ua)) return "StarByte Desktop on Windows";
+    if (/Macintosh|Mac OS X/i.test(ua)) return "StarByte Desktop on macOS";
+    if (/Linux/i.test(ua)) return "StarByte Desktop on Linux";
+    return "StarByte Desktop";
+  }
+  return undefined;
+}
+
 export function registerUser(input: { username: string; displayName: string; password: string }) {
-  return request<{ token: string; user: User }>("/api/auth/register", {
+  const deviceName = getClientDeviceName();
+  return request<{ token: string; user: User; session?: Session }>("/api/auth/register", {
     method: "POST",
-    body: JSON.stringify(input)
+    body: JSON.stringify(deviceName ? { ...input, deviceName } : input)
   });
 }
 
 export function loginUser(input: { username: string; password: string }) {
-  return request<{ token: string; user: User }>("/api/auth/login", {
+  const deviceName = getClientDeviceName();
+  return request<{ token: string; user: User; session?: Session }>("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify(input)
+    body: JSON.stringify(deviceName ? { ...input, deviceName } : input)
+  });
+}
+
+export function fetchSessions() {
+  return request<{ sessions: Session[] }>("/api/auth/sessions");
+}
+
+export function logoutCurrentSession() {
+  return request<{ ok: true }>("/api/auth/logout", {
+    method: "POST"
+  });
+}
+
+export function revokeSession(sessionId: string) {
+  return request<{ ok: true; revokedCurrent: boolean }>(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE"
+  });
+}
+
+export function logoutEverywhere(includeCurrent = true) {
+  return request<{ ok: true; revokedCount: number; loggedOutCurrent: boolean }>("/api/auth/logout-all", {
+    method: "POST",
+    body: JSON.stringify({ includeCurrent })
   });
 }
 
@@ -295,7 +343,7 @@ export function uploadImage(
         } else {
           if (xhr!.status === 401) {
             setToken(null);
-            window.dispatchEvent(new Event("star_byte-auth-invalid"));
+            window.dispatchEvent(new Event("starbyte-auth-invalid"));
           }
           try {
             const data = JSON.parse(xhr!.responseText);

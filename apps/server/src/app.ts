@@ -44,6 +44,7 @@ export async function buildApp() {
   app.decorate("db", db);
   app.decorate("ircBridge", ircBridge);
   app.decorate("wsClients", new Map());
+  app.decorate("wsSessionClients", new Map());
 
   await app.register(cors, {
     origin: (origin, callback) => {
@@ -107,7 +108,7 @@ export async function buildApp() {
   await app.register(whisperRoutes, { prefix: "/api" });
   await app.register(uploadRoutes, { prefix: "/api" });
   await app.register(desktopUpdateRoutes, { prefix: "/api" });
-await app.register(reactionRoutes, { prefix: "/api" });
+  await app.register(reactionRoutes, { prefix: "/api" });
 
 
   app.addHook("onClose", async () => {

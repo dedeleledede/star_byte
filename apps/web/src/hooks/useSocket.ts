@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getToken, type Message, type User, type Reaction } from "../api";
+import { getToken, setToken, type Message, type User, type Reaction } from "../api";
 
 const WS_BASE_URL = (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, "") || "";
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
@@ -26,6 +26,12 @@ export function useSocket(enabled: boolean) {
         wsUrl(`/ws?token=${encodeURIComponent(token)}`)
     );
 
+    const handleRevokedSession = () => {
+      setToken(null);
+      queryClient.clear();
+      window.dispatchEvent(new Event("starbyte-auth-invalid"));
+    };
+
     socket.onmessage = (event) => {
       if (event.data === "pong") return;
 
@@ -34,6 +40,15 @@ export function useSocket(enabled: boolean) {
         payload = JSON.parse(event.data);
       } catch {
         return;
+      }
+
+      if (payload.type === "session.revoked") {
+        handleRevokedSession();
+        return;
+      }
+
+      if (payload.type === "sessions.updated") {
+        void queryClient.invalidateQueries({ queryKey: ["sessions"] });
       }
 
       if (payload.type === "message.created") {
@@ -132,6 +147,12 @@ export function useSocket(enabled: boolean) {
           ["reactions-batch", data.threadId],
           (current = []) => current.filter((item) => !(item.userId === data.userId && item.emoji === data.emoji))
         );
+      }
+    };
+
+    socket.onclose = (event) => {
+      if (event.code === 4001) {
+        handleRevokedSession();
       }
     };
 

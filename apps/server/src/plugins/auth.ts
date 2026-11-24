@@ -5,10 +5,22 @@ export async function registerAuthPlugin(app: FastifyInstance) {
     try {
       await request.jwtVerify();
 
+      if (!request.user.sid) {
+        return reply.code(401).send({ error: "invalid session" });
+      }
+
+      const session = app.db.findActiveSessionById(request.user.sid);
+      if (!session || session.userId !== request.user.sub) {
+        return reply.code(401).send({ error: "invalid session" });
+      }
+
       const user = app.db.findUserById(request.user.sub);
       if (!user) {
         return reply.code(401).send({ error: "invalid session" });
       }
+
+      app.db.touchSessionIfStale(session, { ipAddress: request.ip });
+      request.currentSessionId = session.id;
 
       request.currentUser = {
         id: user.id,

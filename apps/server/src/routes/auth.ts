@@ -1,18 +1,51 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { resolveDeviceName } from "../lib/device.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
-import { emitToAllConnectedUsers } from "../lib/realtime.js";
+import { emitToAllConnectedUsers, emitToUsers, revokeSessionSockets } from "../lib/realtime.js";
 
 const registerSchema = z.object({
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
   displayName: z.string().min(2).max(40),
-  password: z.string().min(8).max(128)
+  password: z.string().min(8).max(128),
+  deviceName: z.string().trim().min(1).max(80).optional()
 });
 
 const loginSchema = z.object({
   username: z.string().min(3).max(20),
-  password: z.string().min(8).max(128)
+  password: z.string().min(8).max(128),
+  deviceName: z.string().trim().min(1).max(80).optional()
 });
+
+const sessionParamsSchema = z.object({
+  sessionId: z.string().min(1)
+});
+
+const logoutAllSchema = z.object({
+  includeCurrent: z.boolean().optional()
+}).optional();
+
+function serializeSession(
+  session: {
+    id: string;
+    deviceName: string;
+    userAgent: string;
+    ipAddress: string;
+    createdAt: string;
+    lastActiveAt: string;
+  },
+  currentSessionId?: string
+) {
+  return {
+    id: session.id,
+    deviceName: session.deviceName,
+    userAgent: session.userAgent,
+    ipAddress: session.ipAddress,
+    createdAt: session.createdAt,
+    lastActiveAt: session.lastActiveAt,
+    current: session.id === currentSessionId
+  };
+}
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post("/register", {
@@ -41,15 +74,26 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       });
       app.log.info({ userId: user.id, username: user.username }, "register: user created");
 
+      const userAgent = typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : "";
+      const headerDevice = typeof request.headers["x-device-name"] === "string" ? request.headers["x-device-name"] : undefined;
+      const session = app.db.createSession({
+        userId: user.id,
+        deviceName: resolveDeviceName(userAgent, parsed.data.deviceName ?? headerDevice),
+        userAgent,
+        ipAddress: request.ip ?? ""
+      });
+
       const token = await reply.jwtSign({
         sub: user.id,
-        username: user.username
+        username: user.username,
+        sid: session.id
       });
       app.log.info({ userId: user.id }, "register: jwt signed");
 
       return {
         token,
-        user
+        user,
+        session: serializeSession(session, session.id)
       };
     } catch (error) {
       app.log.error(error, "register failed");
@@ -74,10 +118,22 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(401).send({ error: "invalid credentials" });
     }
 
+    const userAgent = typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : "";
+    const headerDevice = typeof request.headers["x-device-name"] === "string" ? request.headers["x-device-name"] : undefined;
+    const session = app.db.createSession({
+      userId: user.id,
+      deviceName: resolveDeviceName(userAgent, parsed.data.deviceName ?? headerDevice),
+      userAgent,
+      ipAddress: request.ip ?? ""
+    });
+
     const token = await reply.jwtSign({
       sub: user.id,
-      username: user.username
+      username: user.username,
+      sid: session.id
     });
+
+    emitToUsers(app, [user.id], "sessions.updated", {});
 
     return {
       token,
@@ -92,7 +148,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         isStatusPublic: user.isStatusPublic,
         isAvatarPublic: user.isAvatarPublic,
         createdAt: user.createdAt
-      }
+      },
+      session: serializeSession(session, session.id)
     };
   });
 
@@ -101,6 +158,80 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   }, async (request) => {
     return {
       user: request.currentUser
+    };
+  });
+
+  app.get("/sessions", {
+    preHandler: app.authenticate
+  }, async (request) => {
+    const sessions = app.db.listActiveSessionsForUser(request.currentUser!.id);
+    return {
+      sessions: sessions.map((session) => serializeSession(session, request.currentSessionId))
+    };
+  });
+
+  app.post("/logout", {
+    preHandler: app.authenticate
+  }, async (request) => {
+    const userId = request.currentUser!.id;
+    const sessionId = request.currentSessionId!;
+
+    app.db.revokeSession(sessionId, userId);
+    revokeSessionSockets(app, [sessionId]);
+    emitToUsers(app, [userId], "sessions.updated", {});
+
+    return { ok: true };
+  });
+
+  app.delete("/sessions/:sessionId", {
+    preHandler: app.authenticate
+  }, async (request, reply) => {
+    const params = sessionParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: "invalid payload" });
+    }
+
+    const userId = request.currentUser!.id;
+    const targetSessionId = params.data.sessionId;
+    const revoked = app.db.revokeSession(targetSessionId, userId);
+
+    if (!revoked) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+
+    revokeSessionSockets(app, [targetSessionId]);
+    emitToUsers(app, [userId], "sessions.updated", {});
+
+    return {
+      ok: true,
+      revokedCurrent: targetSessionId === request.currentSessionId
+    };
+  });
+
+  app.post("/logout-all", {
+    preHandler: app.authenticate
+  }, async (request, reply) => {
+    const parsed = logoutAllSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid payload", issues: parsed.error.flatten() });
+    }
+
+    const userId = request.currentUser!.id;
+    const includeCurrent = parsed.data?.includeCurrent ?? true;
+    const revokedIds = app.db.revokeAllSessionsForUser(
+      userId,
+      includeCurrent ? undefined : request.currentSessionId
+    );
+
+    revokeSessionSockets(app, revokedIds);
+    if (!includeCurrent) {
+      emitToUsers(app, [userId], "sessions.updated", {});
+    }
+
+    return {
+      ok: true,
+      revokedCount: revokedIds.length,
+      loggedOutCurrent: includeCurrent
     };
   });
 

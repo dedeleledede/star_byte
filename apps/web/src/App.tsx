@@ -21,6 +21,7 @@ import {
 
     loginUser,
     registerUser,
+    logoutCurrentSession,
 
     markMentionNotificationsRead,
     sendMessage,
@@ -53,6 +54,7 @@ import { useSocket } from "./hooks/useSocket";
 import { PwaPrompt } from "./components/PwaPrompt";
 import { DesktopUpdater } from "./components/DesktopUpdater";
 import { EmojiPicker } from "./components/EmojiPicker";
+import { SessionsScreen } from "./components/SessionsScreen";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 
@@ -428,7 +430,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [isAvatarPublic, setIsAvatarPublic] = useState(true);
 
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-    const [screen, setScreen] = useState<"thread" | "profile">("thread");
+    const [screen, setScreen] = useState<"thread" | "profile" | "sessions">("thread");
 
     const [profileDisplayName, setProfileDisplayName] = useState("");
     const [profileAvatarUrl, setProfileAvatarUrl] = useState("");
@@ -1368,10 +1370,15 @@ const updateProfileMutation = useMutation({
         });
     }
 
-    function logout() {
+    function forceLocalLogout() {
         setToken(null);
         queryClient.clear();
         onLogout();
+    }
+
+    function logout() {
+        void logoutCurrentSession().catch(() => {});
+        forceLocalLogout();
     }
 
     // Reaction functions
@@ -1717,6 +1724,17 @@ const updateProfileMutation = useMutation({
                               Edit profile
                           </button>
 
+                          <button
+                              className="button"
+                              type="button"
+                              onClick={() => {
+                                  setScreen("sessions");
+                                  setAccountMenuOpen(false);
+                              }}
+                          >
+                              Active sessions
+                          </button>
+
                           {IS_TAURI && <DesktopUpdater />}
 
                           <button
@@ -1898,6 +1916,11 @@ const updateProfileMutation = useMutation({
                     isSaving={updateProfileMutation.isPending}
                     error={updateProfileMutation.error ? (updateProfileMutation.error as Error).message : undefined}
                     uploadError={uploadProfileImageMutation.error ? (uploadProfileImageMutation.error as Error).message : undefined}
+                />
+            ) : screen === "sessions" ? (
+                <SessionsScreen
+                    onBack={() => setScreen("thread")}
+                    onForceLogout={forceLocalLogout}
                 />
             ) : (
                 <main className="thread-panel">

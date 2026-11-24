@@ -1707,3 +1707,112 @@ strong {
   border-color: var(--accent);
   color: #0a0f0a;
 }
+
+/* Session management */
+.button-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.button-danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.sessions-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  max-width: 780px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+}
+
+.sessions-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.sessions-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sessions-confirm-banner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  max-width: 780px;
+  padding: 12px;
+  border: 1px solid var(--danger);
+  background: var(--panel);
+}
+
+.sessions-list {
+  display: grid;
+  gap: 10px;
+  max-width: 780px;
+}
+
+.session-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+}
+
+.session-card-current {
+  border-left: 3px solid var(--accent);
+}
+
+.session-card-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--accent);
+  color: #08111a;
+}
+
+.session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.session-ua {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-card-actions {
+  flex: 0 0 auto;
+}
