@@ -1537,6 +1537,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }
 
     function openRoomThread(roomId: string, threadId: string) {
+        setScreen("thread");
+        setSelectedUserProfile(null);
         setSearchTarget(null);
         setSearchThread(null);
         setSidebarMode("threads");
@@ -1548,6 +1550,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }
 
     function openWhisper(threadId: string) {
+        setScreen("thread");
+        setSelectedUserProfile(null);
         setSearchTarget(null);
         setSearchThread(null);
         setSidebarMode("whispers");
