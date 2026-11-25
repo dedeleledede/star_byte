@@ -53,6 +53,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { SearchDatePicker, SearchUserPicker } from "./components/SearchControls";
 import { MessageTimeline } from "./components/MessageTimeline";
 import { MessageComposer } from "./components/MessageComposer";
+import { RoomIconPanel, RoomPassPanel, UserProfilePanel } from "./components/RoomPanels";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void; theme: string; onThemeChange: (theme: string) => void; }) {
@@ -1227,184 +1228,57 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             )}
 
             {roomPassPanelRoom && (
-                <div className="overlay-backdrop" onClick={() => setRoomPassPanelRoomId(null)}>
-                    <div
-                        className="overlay-panel room-overlay room-pass-panel"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <div className="room-overlay-header">
-                            <strong>Room Pass</strong>
-                            <button
-                                className="button"
-                                type="button"
-                                onClick={() => setRoomPassPanelRoomId(null)}
-                            >
-                                Close
-                            </button>
-                        </div>
-
-                        <div className="stack">
-                            <div className="muted">{roomPassPanelRoom.name}</div>
-
-                            <input
-                                readOnly
-                                value={roomPassPanelRoom.roomPass ? `starbyte://${roomPassPanelRoom.roomPass}` : ""}
-                                placeholder="No room pass yet"
-                            />
-
-                            <div className="profile-actions">
-                                <button
-                                    className="button button-primary"
-                                    type="button"
-                                    onClick={async () => {
-                                        await generateRoomPassMutation.mutateAsync(roomPassPanelRoom.id);
-                                        setCopiedRoomPass(false);
-                                        await queryClient.invalidateQueries({ queryKey: ["rooms"] });
-                                    }}
-                                >
-                                    {roomPassPanelRoom.roomPass ? "Regenerate" : "Generate"}
-                                </button>
-
-                                <button
-                                    className="button"
-                                    type="button"
-                                    disabled={!roomPassPanelRoom.roomPass}
-                                    onClick={async () => {
-                                        if (!roomPassPanelRoom.roomPass) return;
-                                        await navigator.clipboard.writeText(`starbyte://${roomPassPanelRoom.roomPass}`);
-                                        setCopiedRoomPass(true);
-                                    }}
-                                >
-                                    {copiedRoomPass ? "Copied" : "Copy link"}
-                                </button>
-
-                                <button
-                                    className="button"
-                                    type="button"
-                                    disabled={!roomPassPanelRoom.roomPass}
-                                    onClick={async () => {
-                                        await deleteRoomPassMutation.mutateAsync(roomPassPanelRoom.id);
-                                        setCopiedRoomPass(false);
-                                        await queryClient.invalidateQueries({ queryKey: ["rooms"] });
-                                    }}
-                                >
-                                    Delete
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <RoomPassPanel
+                    room={roomPassPanelRoom}
+                    copied={copiedRoomPass}
+                    onClose={() => setRoomPassPanelRoomId(null)}
+                    onGenerate={async () => {
+                        await generateRoomPassMutation.mutateAsync(roomPassPanelRoom.id);
+                        setCopiedRoomPass(false);
+                        await queryClient.invalidateQueries({ queryKey: ["rooms"] });
+                    }}
+                    onCopy={async () => {
+                        if (!roomPassPanelRoom.roomPass) return;
+                        await navigator.clipboard.writeText(`starbyte://${roomPassPanelRoom.roomPass}`);
+                        setCopiedRoomPass(true);
+                    }}
+                    onDelete={async () => {
+                        await deleteRoomPassMutation.mutateAsync(roomPassPanelRoom.id);
+                        setCopiedRoomPass(false);
+                        await queryClient.invalidateQueries({ queryKey: ["rooms"] });
+                    }}
+                />
             )}
 
             {selectedUserProfile && (
-                <div className="overlay-backdrop" onClick={() => setSelectedUserProfile(null)}>
-                    <div className="overlay-panel room-overlay" onClick={(event) => event.stopPropagation()}>
-                        <div className="room-overlay-header">
-                            <strong>User Profile</strong>
-                            <button className="button" type="button" onClick={() => setSelectedUserProfile(null)}>
-                                Close
-                            </button>
-                        </div>
-
-                        <div className="stack">
-                            <div className="profile-screen-top">
-                                <AvatarSquare
-                                    displayName={selectedUserProfile.displayName}
-                                    avatarUrl={selectedUserProfile.avatarUrl}
-                                    size="lg"
-                                />
-                                <div className="profile-screen-copy">
-                                    <strong>{selectedUserProfile.displayName}</strong>
-                                    <div className="muted">@{selectedUserProfile.username}</div>
-                                    {selectedUserProfile.statusText && (
-                                        <div className="muted">{selectedUserProfile.statusText}</div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {selectedUserProfile.bio && (
-                                <div className="stack">
-                                    <span className="muted">Bio</span>
-                                    <div>{selectedUserProfile.bio}</div>
-                                </div>
-                            )}
-
-                            <button
-                                className="button button-primary"
-                                type="button"
-                                disabled={
-                                    createWhisperMutation.isPending ||
-                                    selectedUserProfile.id === meQuery.data?.user.id
-                                }
-                                onClick={() => createWhisperMutation.mutate(selectedUserProfile.id)}
-                            >
-                                {createWhisperMutation.isPending ? "Opening..." : "Message"}
-                            </button>
-                            {createWhisperMutation.error && (
-                                <p className="error">{(createWhisperMutation.error as Error).message}</p>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <UserProfilePanel
+                    user={selectedUserProfile}
+                    currentUserId={meQuery.data?.user.id}
+                    opening={createWhisperMutation.isPending}
+                    error={createWhisperMutation.error}
+                    onClose={() => setSelectedUserProfile(null)}
+                    onMessage={() => createWhisperMutation.mutate(selectedUserProfile.id)}
+                />
             )}
 
             {roomIconPanelRoomId && (
-                <div className="overlay-backdrop" onClick={() => setRoomIconPanelRoomId(null)}>
-                    <div
-                        className="overlay-panel room-overlay room-pass-panel"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <div className="room-overlay-header">
-                            <strong>Room Icon</strong>
-                            <button
-                                className="button"
-                                type="button"
-                                onClick={() => setRoomIconPanelRoomId(null)}
-                            >
-                                Close
-                            </button>
-                        </div>
-
-                        <div className="stack">
-                            <input
-                                placeholder="Image URL"
-                                value={roomIconDraft}
-                                onChange={(event) => setRoomIconDraft(event.target.value)}
-                            />
-
-                            <div className="profile-actions">
-                                <button
-                                    className="button button-primary"
-                                    type="button"
-                                    onClick={async () => {
-                                        await updateRoomIconMutation.mutateAsync({
-                                            roomId: roomIconPanelRoomId,
-                                            iconUrl: roomIconDraft.trim() || null
-                                        });
-                                        setRoomIconPanelRoomId(null);
-                                    }}
-                                >
-                                    Save
-                                </button>
-
-                                <button
-                                    className="button"
-                                    type="button"
-                                    onClick={async () => {
-                                        await updateRoomIconMutation.mutateAsync({
-                                            roomId: roomIconPanelRoomId,
-                                            iconUrl: null
-                                        });
-                                        setRoomIconDraft("");
-                                        setRoomIconPanelRoomId(null);
-                                    }}
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <RoomIconPanel
+                    draft={roomIconDraft}
+                    onDraftChange={setRoomIconDraft}
+                    onClose={() => setRoomIconPanelRoomId(null)}
+                    onSave={async () => {
+                        await updateRoomIconMutation.mutateAsync({
+                            roomId: roomIconPanelRoomId,
+                            iconUrl: roomIconDraft.trim() || null
+                        });
+                        setRoomIconPanelRoomId(null);
+                    }}
+                    onRemove={async () => {
+                        await updateRoomIconMutation.mutateAsync({ roomId: roomIconPanelRoomId, iconUrl: null });
+                        setRoomIconDraft("");
+                        setRoomIconPanelRoomId(null);
+                    }}
+                />
             )}
 
             {!IS_TAURI && <PwaPrompt />}
