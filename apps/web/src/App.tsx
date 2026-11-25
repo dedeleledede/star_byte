@@ -53,7 +53,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { SearchDatePicker, SearchUserPicker } from "./components/SearchControls";
 import { MessageTimeline } from "./components/MessageTimeline";
 import { MessageComposer } from "./components/MessageComposer";
-import { RoomIconPanel, RoomPassPanel, UserProfilePanel } from "./components/RoomPanels";
+import { RoomIconPanel, RoomJoinPanel, RoomPassPanel, UserProfilePanel } from "./components/RoomPanels";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void; theme: string; onThemeChange: (theme: string) => void; }) {
@@ -826,76 +826,19 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     return (
         <div className="shell shell-rooms">
             {roomOverlayOpen && (
-                <div
-                    className="overlay-backdrop"
-                    onClick={() => setRoomOverlayOpen(false)}
-                >
-                    <div
-                        className="overlay-panel room-overlay"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <div className="room-overlay-header">
-                            <strong>Rooms</strong>
-                            <button
-                                className="button"
-                                type="button"
-                                onClick={() => setRoomOverlayOpen(false)}
-                            >
-                                Close
-                            </button>
-                        </div>
-
-                        <div className="room-overlay-grid">
-                            <div className="stack">
-                                <div className="section-title">Create / Join Room</div>
-
-                                <input
-                                    placeholder="Room name"
-                                    value={roomName}
-                                    onChange={(event) => {
-                                        setRoomName(event.target.value);
-                                        createRoomMutation.reset();
-                                    }}
-                                />
-
-                                <button
-                                    className="button button-primary"
-                                    type="button"
-                                    onClick={() => createRoomMutation.mutate()}
-                                    disabled={createRoomMutation.isPending || !roomName.trim()}
-                                >
-                                    {createRoomMutation.isPending ? "Creating..." : "Create Room"}
-                                </button>
-
-                                <input
-                                    placeholder="starbyte://1234-1234"
-                                    value={joinRoomPass}
-                                    onChange={(event) => {
-                                        setJoinRoomPass(event.target.value);
-                                        joinRoomMutation.reset();
-                                    }}
-                                />
-
-                                <button
-                                    className="button"
-                                    type="button"
-                                    onClick={() => joinRoomMutation.mutate({ roomPass: joinRoomPass })}
-                                    disabled={joinRoomMutation.isPending || !joinRoomPass.trim()}
-                                >
-                                    {joinRoomMutation.isPending ? "Joining..." : "Join Room"}
-                                </button>
-
-                                {createRoomMutation.error && (
-                                    <p className="error">{(createRoomMutation.error as Error).message}</p>
-                                )}
-
-                                {joinRoomMutation.error && (
-                                    <p className="error">{(joinRoomMutation.error as Error).message}</p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <RoomJoinPanel
+                    roomName={roomName}
+                    onRoomNameChange={(value) => { setRoomName(value); createRoomMutation.reset(); }}
+                    creating={createRoomMutation.isPending}
+                    createError={createRoomMutation.error}
+                    onCreate={() => createRoomMutation.mutate()}
+                    roomPass={joinRoomPass}
+                    onRoomPassChange={(value) => { setJoinRoomPass(value); joinRoomMutation.reset(); }}
+                    joining={joinRoomMutation.isPending}
+                    joinError={joinRoomMutation.error}
+                    onJoin={() => joinRoomMutation.mutate({ roomPass: joinRoomPass })}
+                    onClose={() => setRoomOverlayOpen(false)}
+                />
             )}
             {searchOpen && (
                 <div className="overlay-backdrop" onClick={() => setSearchOpen(false)}>

@@ -1,6 +1,51 @@
 import type { Room, RoomUser } from "../api";
 import { AvatarSquare } from "./Avatars";
 
+interface RoomJoinPanelProps {
+    roomName: string;
+    onRoomNameChange: (value: string) => void;
+    creating: boolean;
+    createError: Error | null;
+    onCreate: () => void;
+    roomPass: string;
+    onRoomPassChange: (value: string) => void;
+    joining: boolean;
+    joinError: Error | null;
+    onJoin: () => void;
+    onClose: () => void;
+}
+
+export function RoomJoinPanel({
+    roomName, onRoomNameChange, creating, createError, onCreate,
+    roomPass, onRoomPassChange, joining, joinError, onJoin, onClose
+}: RoomJoinPanelProps) {
+    return (
+        <div className="overlay-backdrop" onClick={onClose}>
+            <div className="overlay-panel room-overlay" onClick={(event) => event.stopPropagation()}>
+                <div className="room-overlay-header">
+                    <strong>Rooms</strong>
+                    <button className="button" type="button" onClick={onClose}>Close</button>
+                </div>
+                <div className="room-overlay-grid">
+                    <div className="stack">
+                        <div className="section-title">Create / Join Room</div>
+                        <input placeholder="Room name" value={roomName} onChange={(event) => onRoomNameChange(event.target.value)} />
+                        <button className="button button-primary" type="button" onClick={onCreate} disabled={creating || !roomName.trim()}>
+                            {creating ? "Creating..." : "Create Room"}
+                        </button>
+                        <input placeholder="starbyte://1234-1234" value={roomPass} onChange={(event) => onRoomPassChange(event.target.value)} />
+                        <button className="button" type="button" onClick={onJoin} disabled={joining || !roomPass.trim()}>
+                            {joining ? "Joining..." : "Join Room"}
+                        </button>
+                        {createError && <p className="error">{createError.message}</p>}
+                        {joinError && <p className="error">{joinError.message}</p>}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 interface RoomPassPanelProps {
     room: Room;
     copied: boolean;
