@@ -431,6 +431,17 @@ strong {
   letter-spacing: 0.03em;
 }
 
+.chat-header, .room-search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-header-copy { min-width: 0; }
+.chat-header-copy h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-compact-button { display: none; }
+
 .messages {
   min-height: 0;
   overflow-y: auto;
@@ -446,6 +457,11 @@ strong {
   display: grid;
   gap: 2px;
   padding: 3px 0 5px;
+}
+
+.message-line-search-target {
+  outline: 1px solid var(--border-strong);
+  background: var(--panel-2);
 }
 
 .message-line:not(.message-line-grouped) {
@@ -823,6 +839,8 @@ strong {
   .room-users-panel {
     display: none;
   }
+
+  .search-compact-button { display: inline-block; }
 }
 
 .room-card:hover {
@@ -866,6 +884,84 @@ strong {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.search-overlay {
+  width: min(720px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+}
+
+.search-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.search-wide { grid-column: 1 / -1; }
+.search-form input, .search-form select { width: 100%; min-width: 0; }
+.search-user-picker { position: relative; min-width: 0; }
+.search-user-picker:focus-within { z-index: 3; }
+.search-user-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: min(260px, 40vh);
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.search-user-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.search-user-option:hover, .search-user-option-active { background: var(--button-hover); }
+.search-user-empty { padding: 8px 10px; }
+.search-date-picker { position: relative; min-width: 0; }
+.search-date-picker:focus-within { z-index: 4; }
+.search-date-field { display: flex; gap: 6px; }
+.search-date-trigger { flex: 1; min-width: 0; text-align: left; }
+.search-calendar {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: min(320px, calc(100vw - 70px));
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  z-index: 4;
+}
+.search-calendar-heading { display: grid; grid-template-columns: 32px minmax(0, 1fr) 74px 32px; gap: 4px; }
+.search-calendar-heading select { padding: 4px; }
+.search-calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 8px; }
+.search-calendar-days span, .search-calendar-day { min-height: 30px; display: grid; place-items: center; }
+.search-calendar-days span { font-size: 11px; }
+.search-calendar-day { border: 1px solid transparent; background: transparent; color: var(--text); cursor: pointer; }
+.search-calendar-day:hover, .search-calendar-day-selected { border-color: var(--accent); background: var(--button-hover); }
+.search-checks { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.search-checks label { display: flex; gap: 5px; align-items: center; }
+.search-checks input { width: auto; }
+.search-results { display: grid; gap: 6px; max-height: 45vh; overflow-y: auto; }
+.search-result { display: grid; gap: 4px; width: 100%; text-align: left; padding: 10px; border: 1px solid var(--border-strong); background: var(--panel-2); color: inherit; cursor: pointer; }
+.search-result:hover { background: var(--button-hover); }
+.search-result span:last-child { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+@media (max-width: 540px) {
+  .search-form { grid-template-columns: 1fr; }
 }
 
 .context-menu {

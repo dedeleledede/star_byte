@@ -1,13 +1,14 @@
 import {
     SyntheticEvent,
     useMemo,
+    useId,
     useState,
     useEffect,
     useRef,
     type MouseEvent as ReactMouseEvent
 } from "react";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
     fetchMe,
@@ -18,6 +19,7 @@ import {
     fetchThreadMembers,
     fetchMentionNotifications,
     fetchEmbed,
+    searchMessages,
 
     loginUser,
     registerUser,
@@ -37,6 +39,8 @@ import {
     joinRoom,
 
     type Message,
+    type MessageSearchFilters,
+    type SearchMessage,
     type Thread,
     type Room,
     type RoomUser, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass, deleteMessage,
@@ -212,6 +216,178 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
 
 function avatarInitial(name?: string) {
     return (name?.trim()?.charAt(0) || "?").toUpperCase();
+}
+
+function SearchUserPicker({ label, users, value, valueKey, onChange }: {
+    label: string;
+    users: Array<Pick<User, "id" | "username" | "displayName">>;
+    value?: string;
+    valueKey: "id" | "username";
+    onChange: (value?: string) => void;
+}) {
+    const inputId = useId();
+    const listId = `${inputId}-options`;
+    const pickerRef = useRef<HTMLDivElement | null>(null);
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState("");
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const selected = users.find((user) => user[valueKey] === value);
+    const term = query.trim().replace(/^@/, "").toLowerCase();
+    const matches = users.filter((user) =>
+        user.username.toLowerCase().includes(term) || user.displayName.toLowerCase().includes(term)
+    ).sort((left, right) => {
+        const rank = (user: typeof left) => !term || user.username.toLowerCase().startsWith(term) ? 0
+            : user.displayName.toLowerCase().startsWith(term) ? 1
+                : user.username.toLowerCase().includes(term) ? 2 : 3;
+        return rank(left) - rank(right) || left.username.localeCompare(right.username);
+    });
+
+    useEffect(() => {
+        if (!open) return;
+        function closeOutside(event: MouseEvent) {
+            if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+        }
+        document.addEventListener("mousedown", closeOutside);
+        return () => document.removeEventListener("mousedown", closeOutside);
+    }, [open]);
+
+    function choose(user: (typeof users)[number]) {
+        onChange(user[valueKey]);
+        setQuery("");
+        setOpen(false);
+    }
+
+    return (
+        <div className="stack search-user-picker" ref={pickerRef}>
+            <label htmlFor={inputId}>{label}</label>
+            <input
+                id={inputId}
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={open}
+                aria-controls={listId}
+                aria-activedescendant={open && matches.length ? `${listId}-${selectedIndex}` : undefined}
+                placeholder={label === "Mentions" ? "Anyone" : "Any user"}
+                value={open ? query : selected ? `@${selected.username}` : ""}
+                onFocus={() => { setQuery(""); setSelectedIndex(0); setOpen(true); }}
+                onClick={() => { if (!open) { setQuery(""); setSelectedIndex(0); setOpen(true); } }}
+                onChange={(event) => { setQuery(event.target.value); setSelectedIndex(0); onChange(undefined); setOpen(true); }}
+                onBlur={(event) => { if (!pickerRef.current?.contains(event.relatedTarget as Node)) setOpen(false); }}
+                onKeyDown={(event) => {
+                    if (!open) return;
+                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                        event.preventDefault();
+                        setSelectedIndex((index) => Math.max(0, Math.min(matches.length - 1, index + (event.key === "ArrowDown" ? 1 : -1))));
+                    } else if (event.key === "Enter") {
+                        event.preventDefault();
+                        if (matches.length) choose(matches[selectedIndex] ?? matches[0]);
+                    } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        setOpen(false);
+                    }
+                }}
+            />
+            {open && (
+                <div className="search-user-options" id={listId} role="listbox" aria-label={label}>
+                    {matches.length ? matches.map((user, index) => (
+                        <button
+                            key={user.id}
+                            id={`${listId}-${index}`}
+                            role="option"
+                            aria-selected={index === selectedIndex}
+                            className={index === selectedIndex ? "search-user-option search-user-option-active" : "search-user-option"}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => choose(user)}
+                        >
+                            <strong>@{user.username}</strong><span className="muted">{user.displayName}</span>
+                        </button>
+                    )) : <div className="muted search-user-empty">No users found.</div>}
+                    {selected && <button className="search-user-option" type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(undefined); setOpen(false); }}>Clear selection</button>}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function SearchDatePicker({ label, value, onChange }: {
+    label: string;
+    value?: string;
+    onChange: (value?: string) => void;
+}) {
+    const pickerRef = useRef<HTMLDivElement | null>(null);
+    const triggerRef = useRef<HTMLButtonElement | null>(null);
+    const [open, setOpen] = useState(false);
+    const [viewMonth, setViewMonth] = useState(() => {
+        const date = value ? new Date(`${value}T12:00:00`) : new Date();
+        return new Date(date.getFullYear(), date.getMonth(), 1);
+    });
+    const year = viewMonth.getFullYear();
+    const month = viewMonth.getMonth();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const thisYear = new Date().getFullYear();
+    const firstYear = Math.min(thisYear - 100, year);
+    const lastYear = Math.max(thisYear + 10, year);
+    const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
+    const months = Array.from({ length: 12 }, (_, index) => new Date(2020, index, 1).toLocaleString(undefined, { month: "long" }));
+
+    useEffect(() => {
+        if (!open) return;
+        function closeOutside(event: MouseEvent) {
+            if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+        }
+        function closeOnEscape(event: KeyboardEvent) {
+            if (event.key === "Escape") setOpen(false);
+        }
+        document.addEventListener("mousedown", closeOutside);
+        document.addEventListener("keydown", closeOnEscape);
+        return () => {
+            document.removeEventListener("mousedown", closeOutside);
+            document.removeEventListener("keydown", closeOnEscape);
+        };
+    }, [open]);
+
+    function choose(day: number) {
+        onChange(`${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+        setOpen(false);
+        triggerRef.current?.focus();
+    }
+
+    return (
+        <div className="stack search-date-picker" ref={pickerRef}>
+            <span>{label}</span>
+            <div className="search-date-field">
+                <button ref={triggerRef} className="button search-date-trigger" type="button" aria-expanded={open} aria-label={`${label}: ${value ?? "any date"}`} onClick={() => setOpen((current) => !current)}>
+                    {value ? new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Any date"}
+                </button>
+                {value && <button className="button" type="button" aria-label={`Clear ${label.toLowerCase()}`} onClick={() => { onChange(undefined); setOpen(false); }}>Clear</button>}
+            </div>
+            {open && (
+                <div className="search-calendar" aria-label={`${label} calendar`}>
+                    <div className="search-calendar-heading">
+                        <button className="button" type="button" aria-label="Previous month" onClick={() => setViewMonth(new Date(year, month - 1, 1))}>‹</button>
+                        <select aria-label="Month" value={month} onChange={(event) => setViewMonth(new Date(year, Number(event.target.value), 1))}>
+                            {months.map((name, index) => <option key={name} value={index}>{name}</option>)}
+                        </select>
+                        <select aria-label="Year" value={year} onChange={(event) => setViewMonth(new Date(Number(event.target.value), month, 1))}>
+                            {years.map((item) => <option key={item} value={item}>{item}</option>)}
+                        </select>
+                        <button className="button" type="button" aria-label="Next month" onClick={() => setViewMonth(new Date(year, month + 1, 1))}>›</button>
+                    </div>
+                    <div className="search-calendar-days">
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span className="muted" key={day}>{day}</span>)}
+                        {Array.from({ length: firstWeekday }, (_, index) => <span key={`blank-${index}`} />)}
+                        {Array.from({ length: daysInMonth }, (_, index) => {
+                            const day = index + 1;
+                            const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                            return <button className={date === value ? "search-calendar-day search-calendar-day-selected" : "search-calendar-day"} key={day} type="button" aria-label={date} aria-pressed={date === value} onClick={() => choose(day)}>{day}</button>;
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }
 
 function AvatarSquare({displayName, avatarUrl, size = "sm"}: {
@@ -391,6 +567,12 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [roomName, setRoomName] = useState("");
     const [joinRoomPass, setJoinRoomPass] = useState("");
     const [roomOverlayOpen, setRoomOverlayOpen] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchFilters, setSearchFilters] = useState<MessageSearchFilters>({});
+    const [searchContext, setSearchContext] = useState<{ roomId?: string; threadId?: string; label: string } | null>(null);
+    const [submittedSearch, setSubmittedSearch] = useState<MessageSearchFilters | null>(null);
+    const [searchTarget, setSearchTarget] = useState<{ threadId: string; messageId: string } | null>(null);
+    const [searchThread, setSearchThread] = useState<Thread | null>(null);
     const [roomContextMenu, setRoomContextMenu] = useState<null | { type: "room" | "thread"; id: string; x: number; y: number; }>(null);
     const [messageContextMenu, setMessageContextMenu] = useState<null | { message: Message; x: number; y: number; }>(null);
     const [roomPassPanelRoomId, setRoomPassPanelRoomId] = useState<string | null>(null);
@@ -406,6 +588,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
 
     const composerRef = useRef<HTMLInputElement | null>(null);
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
     const messagesRef = useRef<HTMLElement | null>(null);
     const messageRefs = useRef<Record<string, HTMLElement | null>>({});
     const stickToBottomRef = useRef(true);
@@ -452,12 +635,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const activeRoomThreadId = activeRoom?.id ? selectedThreadByRoom[activeRoom.id] ?? null : null;
 
     const activeThread = useMemo(() => {
+        if (searchThread && searchTarget?.threadId === searchThread.id) return searchThread;
         if (sidebarMode === "threads") {
             return roomThreads.find((thread) => thread.id === activeRoomThreadId) ?? roomThreads[0] ?? null;
         }
 
         return whispers.find((thread) => thread.id === activeWhisperId) ?? whispers[0] ?? null;
-    }, [sidebarMode, roomThreads, whispers, activeRoomThreadId, activeWhisperId]);
+    }, [sidebarMode, roomThreads, whispers, activeRoomThreadId, activeWhisperId, searchThread, searchTarget]);
 
     const roomUsersQuery = useQuery({
         queryKey: ["room-users", activeRoom?.id],
@@ -471,12 +655,24 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         enabled: Boolean(activeThread?.id)
     });
 
+    const focusedMessageId = searchTarget && activeThread?.id === searchTarget.threadId
+        ? searchTarget.messageId
+        : null;
+
     const messagesQuery = useQuery({
-        queryKey: ["messages", activeThread?.id],
-        queryFn: () => fetchMessages(activeThread!.id).then((data) => data.messages),
+        queryKey: ["messages", activeThread?.id, focusedMessageId],
+        queryFn: () => fetchMessages(activeThread!.id, focusedMessageId ?? undefined).then((data) => data.messages),
         enabled: Boolean(activeThread?.id),
         refetchInterval: 2000,
         refetchOnWindowFocus: true
+    });
+
+    const searchQuery = useInfiniteQuery({
+        queryKey: ["message-search", submittedSearch],
+        queryFn: ({ pageParam }) => searchMessages(submittedSearch!, pageParam),
+        initialPageParam: 0,
+        getNextPageParam: (lastPage, pages) => lastPage.hasMore ? pages.length * 50 : undefined,
+        enabled: searchOpen && submittedSearch !== null
     });
 
     const mentionNotificationsQuery = useQuery({
@@ -792,6 +988,11 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }, [messagesQuery.data, activeThread?.id]);
 
     useEffect(() => {
+        if (searchTarget?.threadId !== activeThread?.id || !messagesQuery.data?.some((message) => message.id === searchTarget.messageId)) return;
+        requestAnimationFrame(() => messageRefs.current[searchTarget.messageId]?.scrollIntoView({ block: "center" }));
+    }, [searchTarget, activeThread?.id, messagesQuery.data]);
+
+    useEffect(() => {
         if (!activeRoomId && rooms.length > 0) {
             setActiveRoomId(rooms[0].id);
         }
@@ -862,6 +1063,18 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         window.addEventListener("keydown", handleGlobalTyping);
         return () => window.removeEventListener("keydown", handleGlobalTyping);
     }, [screen, activeThread, roomOverlayOpen, selectedUserProfile, accountMenuOpen]);
+
+    useEffect(() => {
+        function handleSearchShortcut(event: KeyboardEvent) {
+            if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "f") return;
+            if (screen !== "thread" || !activeThread || roomOverlayOpen) return;
+            event.preventDefault();
+            if (searchOpen) searchInputRef.current?.focus();
+            else openSearch();
+        }
+        window.addEventListener("keydown", handleSearchShortcut);
+        return () => window.removeEventListener("keydown", handleSearchShortcut);
+    }, [screen, activeThread, activeRoom, roomOverlayOpen, searchOpen]);
 
     useEffect(() => {
         function handleKeyboardNavigation(event: KeyboardEvent) {
@@ -1278,6 +1491,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }
 
     function openRoomThread(roomId: string, threadId: string) {
+        setSearchTarget(null);
+        setSearchThread(null);
         setSidebarMode("threads");
         setActiveRoomId(roomId);
         setSelectedThreadByRoom((prev) => ({
@@ -1287,8 +1502,34 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }
 
     function openWhisper(threadId: string) {
+        setSearchTarget(null);
+        setSearchThread(null);
         setSidebarMode("whispers");
         setActiveWhisperId(threadId);
+    }
+
+    function openSearchResult(result: SearchMessage) {
+        if (result.roomId) openRoomThread(result.roomId, result.threadId);
+        else if (result.threadKind === "whisper") openWhisper(result.threadId);
+        else {
+            setSidebarMode("threads");
+            setSearchThread({ id: result.threadId, title: result.threadTitle, kind: "text", roomId: null,
+                slug: null, createdBy: null, isPrivate: 0, createdAt: result.createdAt });
+        }
+        setSearchTarget({ threadId: result.threadId, messageId: result.id });
+        setScreen("thread");
+        setSearchOpen(false);
+    }
+
+    function openSearch() {
+        if (!activeThread) return;
+        const context = activeThread.kind === "whisper" || !activeThread.roomId
+            ? { threadId: activeThread.id, label: activeThread.title }
+            : { roomId: activeThread.roomId, label: activeRoom?.name ?? "Room" };
+        setSearchContext(context);
+        setSearchFilters({});
+        setSubmittedSearch(null);
+        setSearchOpen(true);
     }
 
     function openUserProfileFromId(userId: string) {
@@ -1459,6 +1700,33 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                     <p className="error">{(joinRoomMutation.error as Error).message}</p>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {searchOpen && (
+                <div className="overlay-backdrop" onClick={() => setSearchOpen(false)}>
+                    <div className="overlay-panel search-overlay" role="dialog" aria-modal="true" aria-label="Search messages" onClick={(event) => event.stopPropagation()}>
+                        <div className="room-overlay-header">
+                            <strong>Search in {searchContext?.label}</strong>
+                            <button className="button" type="button" onClick={() => setSearchOpen(false)}>Close</button>
+                        </div>
+                        <form className="search-form" onSubmit={(event) => { event.preventDefault(); if (searchContext) setSubmittedSearch({ ...searchFilters, roomId: searchContext.roomId, threadId: searchContext.roomId ? searchFilters.threadId : searchContext.threadId, q: searchFilters.q?.trim() }); }}>
+                            <label className="stack search-wide"><span>Text</span><input ref={searchInputRef} autoFocus placeholder="Search message text" value={searchFilters.q ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, q: event.target.value }))} /></label>
+                            <SearchUserPicker label="Sent from" users={sidePanelUsers} value={searchFilters.userId} valueKey="id" onChange={(userId) => setSearchFilters((filters) => ({ ...filters, userId }))} />
+                            {searchContext?.roomId && <label className="stack"><span>Thread</span><select value={searchFilters.threadId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, threadId: event.target.value || undefined }))}><option value="">All threads</option>{roomThreads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select></label>}
+                            <SearchDatePicker label="From date" value={searchFilters.after} onChange={(after) => setSearchFilters((filters) => ({ ...filters, after }))} />
+                            <SearchDatePicker label="Through date" value={searchFilters.before} onChange={(before) => setSearchFilters((filters) => ({ ...filters, before }))} />
+                            <SearchUserPicker label="Mentions" users={sidePanelUsers} value={searchFilters.mentions} valueKey="username" onChange={(mentions) => setSearchFilters((filters) => ({ ...filters, mentions }))} />
+                            <div className="search-checks"><label><input type="checkbox" checked={Boolean(searchFilters.hasLink)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasLink: event.target.checked }))} /> Links</label><label><input type="checkbox" checked={Boolean(searchFilters.hasAttachment)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasAttachment: event.target.checked }))} /> Attachments</label></div>
+                            <button className="button button-primary search-wide" type="submit">Search</button>
+                        </form>
+                        <div className="search-results" aria-live="polite">
+                            {searchQuery.isPending && submittedSearch && <p className="muted">Searching…</p>}
+                            {searchQuery.isError && <p className="error">{(searchQuery.error as Error).message}</p>}
+                            {searchQuery.data?.pages.flatMap((page) => page.messages).map((result) => <button className="search-result" type="button" key={result.id} onClick={() => openSearchResult(result)}><span className="muted">{result.roomName ? `${result.roomName} / ` : ""}{result.threadTitle} · @{result.username} · {new Date(result.createdAt).toLocaleString()}</span><span>{result.body}</span></button>)}
+                            {searchQuery.data && searchQuery.data.pages[0].messages.length === 0 && <p className="muted">No messages found.</p>}
+                            {searchQuery.hasNextPage && <button className="button" type="button" disabled={searchQuery.isFetchingNextPage} onClick={() => void searchQuery.fetchNextPage()}>{searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}</button>}
                         </div>
                     </div>
                 </div>
@@ -1736,22 +2004,22 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                         </>
                     ) : (
                         <>
-                            <header className="thread-header">
-                                <h2>
-                                    {!activeThread
-                                        ? "No thread selected"
-                                        : sidebarMode === "whispers"
+                            <header className="thread-header chat-header">
+                                <div className="chat-header-copy">
+                                    <h2>
+                                        {activeThread.kind === "whisper"
                                             ? activeThread.title
-                                            : `${activeThread.title} · ${activeRoom?.name ?? "No room"}`
-                                    }
-                                </h2>
-                                <p className="muted">
-                                    {sidebarMode === "whispers"
-                                        ? "private whisper"
-                                        : activeRoom
-                                            ? `room: ${activeRoom.name}`
-                                            : "pick a room thread or create one"}
-                                </p>
+                                            : activeThread.roomId ? `${activeThread.title} · ${activeRoom?.name ?? "No room"}` : activeThread.title}
+                                    </h2>
+                                    <p className="muted">
+                                        {activeThread.kind === "whisper"
+                                            ? "private whisper"
+                                            : !activeThread.roomId ? "thread" : activeRoom
+                                                ? `room: ${activeRoom.name}`
+                                                : "pick a room thread or create one"}
+                                    </p>
+                                </div>
+                                <button className="button search-compact-button" type="button" onClick={openSearch}>Search</button>
                             </header>
 
                             <section
@@ -1777,7 +2045,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                             }}
                                             className={[
                                                 "message-line",
-                                                grouped ? "message-line-grouped" : ""
+                                                grouped ? "message-line-grouped" : "",
+                                                searchTarget?.messageId === message.id ? "message-line-search-target" : ""
                                             ].filter(Boolean).join(" ")}
                                             onContextMenu={(event) => {
                                                 event.preventDefault();
@@ -2111,11 +2380,12 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             )}
             {activeThread && (
                 <aside className="room-users-panel">
-                    <div className="thread-header">
-                        <h2>{sidebarMode === "whispers" ? activeThread.title : activeRoom?.name ?? "No room selected"}</h2>
-                        <p className="muted">
-                            {sidebarMode === "whispers" ? "whisper participants" : "room users"}
-                        </p>
+                    <div className="thread-header room-search-header">
+                        <div className="chat-header-copy">
+                            <h2>{activeThread.kind === "whisper" || !activeThread.roomId ? activeThread.title : activeRoom?.name ?? "No room selected"}</h2>
+                            <p className="muted">{activeThread.kind === "whisper" ? "whisper participants" : "room users"}</p>
+                        </div>
+                        {screen === "thread" && <button className="button" type="button" onClick={openSearch}>Search</button>}
                     </div>
 
                     <div className="room-user-list">

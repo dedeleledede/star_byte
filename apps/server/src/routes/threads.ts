@@ -39,6 +39,51 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
+  app.get("/messages/search", { preHandler: app.authenticate }, async (request, reply) => {
+    const parsed = z.object({
+      q: z.string().max(200).optional(),
+      userId: z.string().uuid().optional(),
+      roomId: z.string().uuid().optional(),
+      threadId: z.string().min(1).max(100).optional(),
+      after: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      before: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      hasLink: z.enum(["true", "false"]).optional(),
+      hasAttachment: z.enum(["true", "false"]).optional(),
+      mentions: z.string().regex(/^[a-zA-Z0-9_]{3,20}$/).optional(),
+      offset: z.coerce.number().int().min(0).max(10000).default(0)
+    }).strict().safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid search filters" });
+    const { after, before, q, offset, ...rest } = parsed.data;
+    if (!rest.roomId && !rest.threadId) {
+      return reply.code(400).send({ error: "select a search scope" });
+    }
+    if (rest.roomId && !app.db.isRoomMember(rest.roomId, request.currentUser!.id)) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+    if (rest.threadId && !app.db.canAccessThread(rest.threadId, request.currentUser!.id)) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+    const date = (value: string | undefined, nextDay: boolean) => {
+      if (!value) return undefined;
+      const parsedDate = new Date(`${value}T00:00:00.000Z`);
+      if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== value) return null;
+      if (nextDay) parsedDate.setUTCDate(parsedDate.getUTCDate() + 1);
+      return parsedDate.toISOString();
+    };
+    const start = date(after, false);
+    const end = date(before, true);
+    if (start === null || end === null) return reply.code(400).send({ error: "invalid search filters" });
+    const messages = app.db.searchMessages(request.currentUser!.id, {
+      ...rest,
+      query: q?.trim(),
+      after: start, before: end,
+      hasLink: rest.hasLink === "true",
+      hasAttachment: rest.hasAttachment === "true",
+      limit: 51, offset
+    });
+    return { messages: messages.slice(0, 50), hasMore: messages.length > 50 };
+  });
+
   app.get("/threads", {
     preHandler: app.authenticate
   }, async (request, reply) => {
@@ -91,15 +136,21 @@ export const threadRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: "invalid thread id" });
     }
 
-    const limit = Number((request.query as { limit?: string }).limit ?? 50);
+    const query = z.object({
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      through: z.string().uuid().optional()
+    }).safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: "invalid payload" });
 
     if (!app.db.canAccessThread(params.data.threadId, request.currentUser!.id)) {
       return reply.code(403).send({ error: "forbidden" });
     }
 
-    return {
-      messages: app.db.listMessages(params.data.threadId, limit).reverse()
-    };
+    const messages = query.data.through
+      ? app.db.listMessagesThrough(params.data.threadId, query.data.through)
+      : app.db.listMessages(params.data.threadId, query.data.limit);
+    if (!messages) return reply.code(404).send({ error: "message not found" });
+    return { messages: messages.reverse() };
   });
 
   app.patch("/threads/:threadId/messages/:messageId", {
