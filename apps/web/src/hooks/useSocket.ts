@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getToken, setToken, type Message, type User, type Reaction } from "../api";
+import { getToken, setToken, type Message, type PinnedMessage, type User, type Reaction } from "../api";
 
 const WS_BASE_URL = (import.meta as any).env?.VITE_WS_BASE_URL?.replace(/\/+$/, "") || "";
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
@@ -70,6 +70,16 @@ export function useSocket(enabled: boolean) {
             ["messages", message.threadId],
             (current = []) => current.map((item) => item.id === message.id ? message : item)
         );
+
+        queryClient.setQueryData<PinnedMessage[]>(
+          ["pinned-messages", message.threadId],
+          (current) =>
+            current?.map((item) =>
+              item.messageId === message.id
+                ? { ...item, body: message.body, editedAt: message.editedAt }
+                : item
+            )
+        );
       }
 
       if (payload.type === "message.deleted") {
@@ -78,6 +88,54 @@ export function useSocket(enabled: boolean) {
         queryClient.setQueryData<Message[]>(
             ["messages", data.threadId],
             (current = []) => current.filter((item) => item.id !== data.messageId)
+        );
+
+        queryClient.setQueryData<PinnedMessage[]>(
+          ["pinned-messages", data.threadId],
+          (current) => current?.filter((item) => item.messageId !== data.messageId)
+        );
+      }
+
+      if (payload.type === "message.pinned") {
+        const data = payload.data as { threadId: string; messageId: string; pin: PinnedMessage };
+
+        queryClient.setQueryData<Message[]>(
+          ["messages", data.threadId],
+          (current) =>
+            current?.map((item) =>
+              item.id === data.messageId
+                ? { ...item, pinnedAt: data.pin.pinnedAt, pinnedByUserId: data.pin.pinnedByUserId }
+                : item
+            )
+        );
+
+        queryClient.setQueryData<PinnedMessage[]>(
+          ["pinned-messages", data.threadId],
+          (current) => {
+            const list = current ?? [];
+            return list.some((item) => item.messageId === data.messageId)
+              ? list
+              : [data.pin, ...list];
+          }
+        );
+      }
+
+      if (payload.type === "message.unpinned") {
+        const data = payload.data as { threadId: string; messageId: string };
+
+        queryClient.setQueryData<Message[]>(
+          ["messages", data.threadId],
+          (current) =>
+            current?.map((item) =>
+              item.id === data.messageId
+                ? { ...item, pinnedAt: null, pinnedByUserId: null }
+                : item
+            )
+        );
+
+        queryClient.setQueryData<PinnedMessage[]>(
+          ["pinned-messages", data.threadId],
+          (current) => current?.filter((item) => item.messageId !== data.messageId)
         );
       }
 
@@ -89,6 +147,7 @@ export function useSocket(enabled: boolean) {
         const data = payload.data as { threadId: string; roomId: string };
         void queryClient.invalidateQueries({ queryKey: ["threads", data.roomId] });
         queryClient.removeQueries({ queryKey: ["messages", data.threadId] });
+        queryClient.removeQueries({ queryKey: ["pinned-messages", data.threadId] });
       }
 
       if (payload.type === "room.members.changed") {
@@ -107,6 +166,7 @@ export function useSocket(enabled: boolean) {
         void queryClient.invalidateQueries({ queryKey: ["room-users"] });
         void queryClient.invalidateQueries({ queryKey: ["thread-members"] });
         void queryClient.invalidateQueries({ queryKey: ["messages"] });
+        void queryClient.invalidateQueries({ queryKey: ["pinned-messages"] });
         void queryClient.invalidateQueries({ queryKey: ["mention-notifications"] });
         void queryClient.invalidateQueries({ queryKey: ["whispers"] });
       }
