@@ -458,7 +458,7 @@ strong {
 
 .message-main {
   display: grid;
-  grid-template-columns: 32px 1fr;
+  grid-template-columns: 32px minmax(0, 1fr);
   gap: 8px;
   align-items: start;
 }
@@ -467,6 +467,7 @@ strong {
   display: grid;
   gap: 2px;
   min-width: 0;
+  width: 100%;
   justify-items: start;
 }
 
@@ -1145,6 +1146,8 @@ strong {
 }
 
 .message-text {
+  width: 100%;
+  justify-self: stretch;
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
   gap: 6px;
@@ -1156,12 +1159,15 @@ strong {
 .message-text-grouped {
   padding-left: 40px;
   display: grid;
-  gap: 2px;
+  gap: 2px 6px;
   justify-items: start;
   min-width: 0;
 }
 
 .message-content {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
   min-width: 0;
 }
 
@@ -1174,15 +1180,21 @@ strong {
 }
 
 .message-actions {
+  grid-column: 3;
+  grid-row: 1;
   opacity: 0;
   pointer-events: none;
   display: flex;
   justify-self: end;
   align-items: start;
   gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .message-actions-placeholder {
+  grid-column: 3;
+  grid-row: 1;
   width: 1px;
 }
 
@@ -1630,10 +1642,12 @@ strong {
 
 /* Message reactions */
 .message-reactions {
+  grid-column: 2 / -1;
+  grid-row: 2;
   margin-top: 4px;
   padding-top: 4px;
   border-top: 1px solid var(--border);
-  padding-left: 20px; /* Align with message content (after 14px prefix + 6px gap) */
+  padding-left: 0;
   justify-self: start; /* Don't stretch to fill grid cell */
   max-width: 100%;
 }
@@ -1839,4 +1853,106 @@ strong {
 
 .session-card-actions {
   flex: 0 0 auto;
+}
+
+/* Pinned messages */
+.thread-header-with-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.thread-header-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.thread-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.pinned-header-button {
+  padding: 0.4rem 0.7rem;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.message-line-pinned {
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.pinned-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent-2);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pinned-badge-inline {
+  margin-bottom: 2px;
+}
+
+.pinned-panel {
+  width: min(640px, calc(100vw - 40px));
+  max-height: 80vh;
+  grid-template-rows: auto 1fr;
+}
+
+.pinned-list {
+  display: grid;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: 62vh;
+  padding-right: 4px;
+}
+
+.pinned-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
+  background: var(--panel-2);
+}
+
+.pinned-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.pinned-card-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pinned-card-meta {
+  font-size: 11px;
+}
+
+.pinned-card-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.pinned-card-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "Consolas", "Cascadia Code", "JetBrains Mono", "Fira Code", monospace;
 }

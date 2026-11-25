@@ -52,6 +52,26 @@ export interface Message {
   replyToMessageId: string | null;
   editedAt: string | null;
   createdAt: string;
+  pinnedAt?: string | null;
+  pinnedByUserId?: string | null;
+}
+
+export interface PinnedMessage {
+  pinId: string;
+  messageId: string;
+  threadId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  body: string;
+  replyToMessageId: string | null;
+  editedAt: string | null;
+  createdAt: string;
+  pinnedAt: string;
+  pinnedByUserId: string;
+  pinnedByUsername: string;
+  pinnedByDisplayName: string;
 }
 
 export interface Room {
@@ -419,6 +439,22 @@ export function updateMessage(threadId: string, messageId: string, input: { body
 
 export function deleteMessage(threadId: string, messageId: string) {
   return request<{ ok: true }>(`/api/threads/${threadId}/messages/${messageId}`, {
+    method: "DELETE"
+  });
+}
+
+export function fetchPinnedMessages(threadId: string) {
+  return request<{ pins: PinnedMessage[] }>(`/api/threads/${encodeURIComponent(threadId)}/pins`);
+}
+
+export function pinMessage(threadId: string, messageId: string) {
+  return request<{ pin: PinnedMessage }>(`/api/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/pin`, {
+    method: "POST"
+  });
+}
+
+export function unpinMessage(threadId: string, messageId: string) {
+  return request<{ ok: true }>(`/api/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/pin`, {
     method: "DELETE"
   });
 }

@@ -45,6 +45,26 @@ export interface MessageRecord {
   replyToMessageId: string | null;
   editedAt: string | null;
   createdAt: string;
+  pinnedAt: string | null;
+  pinnedByUserId: string | null;
+}
+
+export interface PinnedMessageRecord {
+  pinId: string;
+  messageId: string;
+  threadId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  body: string;
+  replyToMessageId: string | null;
+  editedAt: string | null;
+  createdAt: string;
+  pinnedAt: string;
+  pinnedByUserId: string;
+  pinnedByUsername: string;
+  pinnedByDisplayName: string;
 }
 
 export interface ThreadMemberRecord {
@@ -167,6 +187,19 @@ export class DatabaseService {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         UNIQUE(message_id, user_id, emoji)
       );
+
+      CREATE TABLE IF NOT EXISTS pinned_messages (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        message_id TEXT NOT NULL UNIQUE,
+        pinned_by_user_id TEXT NOT NULL,
+        pinned_at TEXT NOT NULL,
+        FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE,
+        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+        FOREIGN KEY (pinned_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_pinned_messages_thread_id ON pinned_messages(thread_id, pinned_at DESC);
 
       CREATE TABLE IF NOT EXISTS rooms (
        id TEXT PRIMARY KEY,
@@ -488,6 +521,48 @@ export class DatabaseService {
     return this.isMember(threadId, userId);
   }
 
+  getRoomMemberRole(roomId: string, userId: string): string | null {
+    const row = this.db.prepare(`
+      SELECT role
+      FROM room_members
+      WHERE room_id = ? AND user_id = ?
+    `).get(roomId, userId) as { role: string } | undefined;
+
+    return row?.role ?? null;
+  }
+
+  getThreadMemberRole(threadId: string, userId: string): string | null {
+    const row = this.db.prepare(`
+      SELECT role
+      FROM thread_members
+      WHERE thread_id = ? AND user_id = ?
+    `).get(threadId, userId) as { role: string } | undefined;
+
+    return row?.role ?? null;
+  }
+
+  canPinInThread(threadId: string, userId: string): boolean {
+    const thread = this.getThreadById(threadId);
+    if (!thread) return false;
+    if (!this.canAccessThread(threadId, userId)) return false;
+
+    if (thread.kind === "whisper") {
+      return true;
+    }
+
+    if (thread.roomId) {
+      const room = this.getRoomById(thread.roomId);
+      if (room?.hostUserId === userId) return true;
+      if (thread.createdBy === userId) return true;
+      const roomRole = this.getRoomMemberRole(thread.roomId, userId);
+      return roomRole === "host" || roomRole === "admin" || roomRole === "moderator";
+    }
+
+    if (thread.createdBy === userId) return true;
+    const threadRole = this.getThreadMemberRole(threadId, userId);
+    return threadRole === "host" || threadRole === "admin" || threadRole === "moderator";
+  }
+
   listMembersForThread(threadId: string) {
     const thread = this.getThreadById(threadId);
     if (!thread) return [];
@@ -614,6 +689,11 @@ export class DatabaseService {
 
   deleteMessage(messageId: string) {
     this.db.prepare(`
+      DELETE FROM pinned_messages
+      WHERE message_id = ?
+    `).run(messageId);
+
+    this.db.prepare(`
     UPDATE messages
     SET deleted_at = ?
     WHERE id = ? AND deleted_at IS NULL
@@ -625,6 +705,86 @@ export class DatabaseService {
     DELETE FROM mention_notifications
     WHERE message_id = ?
   `).run(messageId);
+  }
+
+  // Pinned messages
+  pinMessage(input: { threadId: string; messageId: string; pinnedByUserId: string }) {
+    const existing = this.getPinnedMessage(input.messageId);
+    if (existing) {
+      return { pin: existing, created: false };
+    }
+
+    const id = randomUUID();
+    const pinnedAt = new Date().toISOString();
+
+    this.db.prepare(`
+      INSERT INTO pinned_messages (id, thread_id, message_id, pinned_by_user_id, pinned_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, input.threadId, input.messageId, input.pinnedByUserId, pinnedAt);
+
+    return { pin: this.getPinnedMessage(input.messageId)!, created: true };
+  }
+
+  unpinMessage(threadId: string, messageId: string) {
+    const result = this.db.prepare(`
+      DELETE FROM pinned_messages
+      WHERE thread_id = ? AND message_id = ?
+    `).run(threadId, messageId);
+
+    return result.changes > 0;
+  }
+
+  getPinnedMessage(messageId: string) {
+    return this.db.prepare(`
+      SELECT
+        pm.id as pinId,
+        pm.message_id as messageId,
+        pm.thread_id as threadId,
+        m.user_id as userId,
+        author.username,
+        author.display_name as displayName,
+        author.avatar_url as avatarUrl,
+        m.body,
+        m.reply_to_message_id as replyToMessageId,
+        m.edited_at as editedAt,
+        m.created_at as createdAt,
+        pm.pinned_at as pinnedAt,
+        pm.pinned_by_user_id as pinnedByUserId,
+        pinner.username as pinnedByUsername,
+        pinner.display_name as pinnedByDisplayName
+      FROM pinned_messages pm
+      INNER JOIN messages m ON m.id = pm.message_id
+      INNER JOIN users author ON author.id = m.user_id
+      INNER JOIN users pinner ON pinner.id = pm.pinned_by_user_id
+      WHERE pm.message_id = ? AND m.deleted_at IS NULL
+    `).get(messageId) as PinnedMessageRecord | undefined;
+  }
+
+  listPinnedMessages(threadId: string) {
+    return this.db.prepare(`
+      SELECT
+        pm.id as pinId,
+        pm.message_id as messageId,
+        pm.thread_id as threadId,
+        m.user_id as userId,
+        author.username,
+        author.display_name as displayName,
+        author.avatar_url as avatarUrl,
+        m.body,
+        m.reply_to_message_id as replyToMessageId,
+        m.edited_at as editedAt,
+        m.created_at as createdAt,
+        pm.pinned_at as pinnedAt,
+        pm.pinned_by_user_id as pinnedByUserId,
+        pinner.username as pinnedByUsername,
+        pinner.display_name as pinnedByDisplayName
+      FROM pinned_messages pm
+      INNER JOIN messages m ON m.id = pm.message_id
+      INNER JOIN users author ON author.id = m.user_id
+      INNER JOIN users pinner ON pinner.id = pm.pinned_by_user_id
+      WHERE pm.thread_id = ? AND m.deleted_at IS NULL
+      ORDER BY pm.pinned_at DESC
+    `).all(threadId) as PinnedMessageRecord[];
   }
 
   // Reactions
@@ -724,9 +884,12 @@ export class DatabaseService {
         m.body,
         m.reply_to_message_id as replyToMessageId,
         m.edited_at as editedAt,
-        m.created_at as createdAt
+        m.created_at as createdAt,
+        pm.pinned_at as pinnedAt,
+        pm.pinned_by_user_id as pinnedByUserId
       FROM messages m
       INNER JOIN users u ON u.id = m.user_id
+      LEFT JOIN pinned_messages pm ON pm.message_id = m.id
       WHERE m.id = ? AND m.deleted_at IS NULL
     `).get(messageId) as MessageRecord | undefined;
   }
@@ -743,9 +906,12 @@ export class DatabaseService {
         m.body,
         m.reply_to_message_id as replyToMessageId,
         m.edited_at as editedAt,
-        m.created_at as createdAt
+        m.created_at as createdAt,
+        pm.pinned_at as pinnedAt,
+        pm.pinned_by_user_id as pinnedByUserId
       FROM messages m
       INNER JOIN users u ON u.id = m.user_id
+      LEFT JOIN pinned_messages pm ON pm.message_id = m.id
       WHERE m.thread_id = ? AND m.deleted_at IS NULL
       ORDER BY m.created_at DESC
       LIMIT ?

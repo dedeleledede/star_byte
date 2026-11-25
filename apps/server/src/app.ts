@@ -19,6 +19,7 @@ import { whisperRoutes } from "./routes/whispers.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { desktopUpdateRoutes } from "./routes/desktopUpdates.js";
 import { reactionRoutes } from "./routes/reactions.js";
+import { pinRoutes } from "./routes/pins.js";
 
 export async function buildApp() {
   const trustProxy = process.env.TRUST_PROXY === "true";
@@ -109,6 +110,7 @@ export async function buildApp() {
   await app.register(uploadRoutes, { prefix: "/api" });
   await app.register(desktopUpdateRoutes, { prefix: "/api" });
   await app.register(reactionRoutes, { prefix: "/api" });
+  await app.register(pinRoutes, { prefix: "/api" });
 
 
   app.addHook("onClose", async () => {

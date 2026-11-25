@@ -41,8 +41,12 @@ import {
     removeReaction,
     fetchReactionsForMessage,
     fetchReactionsForMessages,
+    fetchPinnedMessages,
+    pinMessage,
+    unpinMessage,
 
     type Message,
+    type PinnedMessage,
     type Thread,
     type Room,
     type RoomUser,
@@ -460,6 +464,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
     const [editingDraft, setEditingDraft] = useState("");
     const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+    const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false);
 
     // Emoji picker state
     const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -543,6 +548,18 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         refetchInterval: 2000,
         refetchOnWindowFocus: true
     });
+
+    const pinnedMessagesQuery = useQuery({
+        queryKey: ["pinned-messages", activeThread?.id],
+        queryFn: () => fetchPinnedMessages(activeThread!.id).then((data) => data.pins),
+        enabled: Boolean(activeThread?.id),
+        refetchInterval: 5000,
+        refetchOnWindowFocus: true
+    });
+
+    const pinnedMessageIds = useMemo(() => {
+        return new Set((pinnedMessagesQuery.data ?? []).map((pin) => pin.messageId));
+    }, [pinnedMessagesQuery.data]);
 
     // Fetch reactions for all messages in the active thread
     const messageIds = useMemo(() => (messagesQuery.data ?? []).map((m) => m.id), [messagesQuery.data]);
@@ -882,6 +899,53 @@ const updateProfileMutation = useMutation({
         }
     });
 
+    const pinMessageMutation = useMutation({
+        mutationFn: async ({ threadId, messageId }: { threadId: string; messageId: string }) => {
+            return pinMessage(threadId, messageId);
+        },
+        onSuccess: async (data, vars) => {
+            queryClient.setQueryData<Message[]>(
+                ["messages", vars.threadId],
+                (current) =>
+                    current?.map((item) =>
+                        item.id === vars.messageId
+                            ? { ...item, pinnedAt: data.pin.pinnedAt, pinnedByUserId: data.pin.pinnedByUserId }
+                            : item
+                    )
+            );
+            queryClient.setQueryData<PinnedMessage[]>(
+                ["pinned-messages", vars.threadId],
+                (current = []) =>
+                    current.some((item) => item.messageId === vars.messageId)
+                        ? current
+                        : [data.pin, ...current]
+            );
+            await queryClient.invalidateQueries({ queryKey: ["pinned-messages", vars.threadId] });
+        }
+    });
+
+    const unpinMessageMutation = useMutation({
+        mutationFn: async ({ threadId, messageId }: { threadId: string; messageId: string }) => {
+            return unpinMessage(threadId, messageId);
+        },
+        onSuccess: async (_, vars) => {
+            queryClient.setQueryData<Message[]>(
+                ["messages", vars.threadId],
+                (current) =>
+                    current?.map((item) =>
+                        item.id === vars.messageId
+                            ? { ...item, pinnedAt: null, pinnedByUserId: null }
+                            : item
+                    )
+            );
+            queryClient.setQueryData<PinnedMessage[]>(
+                ["pinned-messages", vars.threadId],
+                (current = []) => current.filter((item) => item.messageId !== vars.messageId)
+            );
+            await queryClient.invalidateQueries({ queryKey: ["pinned-messages", vars.threadId] });
+        }
+    });
+
     // memos
 
     const validMentionUsernames = useMemo(() => {
@@ -992,6 +1056,7 @@ const updateProfileMutation = useMutation({
             if (screen !== "thread") return;
             if (!activeThread) return;
             if (roomOverlayOpen) return;
+            if (pinnedPanelOpen) return;
             if (selectedUserProfile) return;
             if (accountMenuOpen) return;
 
@@ -1010,7 +1075,7 @@ const updateProfileMutation = useMutation({
 
         window.addEventListener("keydown", handleGlobalTyping);
         return () => window.removeEventListener("keydown", handleGlobalTyping);
-    }, [screen, activeThread, roomOverlayOpen, selectedUserProfile, accountMenuOpen]);
+    }, [screen, activeThread, roomOverlayOpen, pinnedPanelOpen, selectedUserProfile, accountMenuOpen]);
 
     useEffect(() => {
         if (sidebarMode !== "threads") return;
@@ -1043,6 +1108,7 @@ const updateProfileMutation = useMutation({
         setEditingMessageId(null);
         setEditingDraft("");
         setReplyingToMessage(null);
+        setPinnedPanelOpen(false);
     }, [activeThread?.id]);
 
     useEffect(() => {
@@ -1063,6 +1129,7 @@ const updateProfileMutation = useMutation({
             if (screen !== "thread") return;
             if (!activeThread) return;
             if (roomOverlayOpen) return;
+            if (pinnedPanelOpen) return;
             if (selectedUserProfile) return;
             if (accountMenuOpen) return;
             if (mentionOpen) return;
@@ -1083,7 +1150,7 @@ const updateProfileMutation = useMutation({
         return () => window.removeEventListener("keydown", handleArrowUpEdit);
     }, [
         screen, activeThread,
-        roomOverlayOpen, selectedUserProfile,
+        roomOverlayOpen, pinnedPanelOpen, selectedUserProfile,
         accountMenuOpen, mentionOpen,
         editingMessageId, draft,
         messagesQuery.data, meQuery.data?.user.id
@@ -1465,6 +1532,16 @@ const updateProfileMutation = useMutation({
             activeRoom &&
             (activeRoom.hostUserId === currentUserId || thread.createdBy === currentUserId)
         );
+    }
+
+    function canPinInThread(thread: Thread | null) {
+        const currentUserId = meQuery.data?.user.id;
+        if (!currentUserId || !thread) return false;
+        if (thread.kind === "whisper") return true;
+        if (!activeRoom || thread.roomId !== activeRoom.id) {
+            return thread.createdBy === currentUserId;
+        }
+        return activeRoom.hostUserId === currentUserId || thread.createdBy === currentUserId;
     }
 
     function openRoomThread(roomId: string, threadId: string) {
@@ -1952,22 +2029,34 @@ const updateProfileMutation = useMutation({
                         </>
                     ) : (
                         <>
-                            <header className="thread-header">
-                                <h2>
-                                    {!activeThread
-                                        ? "No thread selected"
-                                        : sidebarMode === "whispers"
-                                            ? activeThread.title
-                                            : `${activeThread.title} · ${activeRoom?.name ?? "No room"}`
-                                    }
-                                </h2>
-                                <p className="muted">
-                                    {sidebarMode === "whispers"
-                                        ? "private whisper"
-                                        : activeRoom
-                                            ? `room: ${activeRoom.name}`
-                                            : "pick a room thread or create one"}
-                                </p>
+                            <header className="thread-header thread-header-with-actions">
+                                <div className="thread-header-copy">
+                                    <h2>
+                                        {!activeThread
+                                            ? "No thread selected"
+                                            : sidebarMode === "whispers"
+                                                ? activeThread.title
+                                                : `${activeThread.title} · ${activeRoom?.name ?? "No room"}`
+                                        }
+                                    </h2>
+                                    <p className="muted">
+                                        {sidebarMode === "whispers"
+                                            ? "private whisper"
+                                            : activeRoom
+                                                ? `room: ${activeRoom.name}`
+                                                : "pick a room thread or create one"}
+                                    </p>
+                                </div>
+                                <div className="thread-header-actions">
+                                    <button
+                                        type="button"
+                                        className={`button pinned-header-button ${pinnedPanelOpen ? "button-primary" : ""}`}
+                                        onClick={() => setPinnedPanelOpen((prev) => !prev)}
+                                        title="Pinned messages"
+                                    >
+                                        Pinned ({(pinnedMessagesQuery.data ?? []).length})
+                                    </button>
+                                </div>
                             </header>
 
                             <section
@@ -1983,6 +2072,8 @@ const updateProfileMutation = useMutation({
                                     const urls = extractUrls(message.body);
                                     const isEditing = editingMessageId === message.id;
                                     const isOwnMessage = message.userId === meQuery.data?.user.id;
+                                    const isPinned = pinnedMessageIds.has(message.id) || Boolean(message.pinnedAt);
+                                    const canPin = canPinInThread(activeThread);
                                     const repliedTo = message.replyToMessageId ? messagesById.get(message.replyToMessageId) : null;
 
                                     return (
@@ -1993,7 +2084,8 @@ const updateProfileMutation = useMutation({
                                             }}
                                             className={[
                                                 "message-line",
-                                                grouped ? "message-line-grouped" : ""
+                                                grouped ? "message-line-grouped" : "",
+                                                isPinned ? "message-line-pinned" : ""
                                             ].filter(Boolean).join(" ")}
                                             onContextMenu={(event) => {
                                                 event.preventDefault();
@@ -2031,6 +2123,9 @@ const updateProfileMutation = useMutation({
                                                             <span className="muted">
                                                                 {new Date(message.createdAt).toLocaleTimeString()}
                                                             </span>
+                                                            {isPinned && (
+                                                                <span className="pinned-badge">Pinned</span>
+                                                            )}
                                                         </div>
 
                                                         <div className="message-text">
@@ -2154,6 +2249,23 @@ const updateProfileMutation = useMutation({
                                                                     >
                                                                         Reply
                                                                     </button>
+                                                                    {canPin && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className="message-inline-action"
+                                                                            disabled={pinMessageMutation.isPending || unpinMessageMutation.isPending}
+                                                                            onClick={() => {
+                                                                                if (!activeThread) return;
+                                                                                if (isPinned) {
+                                                                                    unpinMessageMutation.mutate({ threadId: activeThread.id, messageId: message.id });
+                                                                                } else {
+                                                                                    pinMessageMutation.mutate({ threadId: activeThread.id, messageId: message.id });
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            {isPinned ? "Unpin" : "Pin"}
+                                                                        </button>
+                                                                    )}
                                                                     {isOwnMessage && <button
                                                                         type="button"
                                                                         className="message-inline-action"
@@ -2211,6 +2323,9 @@ const updateProfileMutation = useMutation({
                                                             </div>
                                                         ) : (
                                                             <>
+                                                                {isPinned && (
+                                                                    <span className="pinned-badge pinned-badge-inline">Pinned</span>
+                                                                )}
                                                                 {message.replyToMessageId && (
                                                                     <button
                                                                         type="button"
@@ -2280,6 +2395,23 @@ const updateProfileMutation = useMutation({
                                                         >
                                                             Reply
                                                         </button>
+                                                        {canPin && (
+                                                            <button
+                                                                type="button"
+                                                                className="message-inline-action"
+                                                                disabled={pinMessageMutation.isPending || unpinMessageMutation.isPending}
+                                                                onClick={() => {
+                                                                    if (!activeThread) return;
+                                                                    if (isPinned) {
+                                                                        unpinMessageMutation.mutate({ threadId: activeThread.id, messageId: message.id });
+                                                                    } else {
+                                                                        pinMessageMutation.mutate({ threadId: activeThread.id, messageId: message.id });
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {isPinned ? "Unpin" : "Pin"}
+                                                            </button>
+                                                        )}
                                                         {isOwnMessage && (
                                                             <button
                                                                 type="button"
@@ -2551,6 +2683,35 @@ const updateProfileMutation = useMutation({
                         Reply
                     </button>
 
+                    {canPinInThread(activeThread) && (() => {
+                        const target = messageContextMenu.message;
+                        const targetPinned = pinnedMessageIds.has(target.id) || Boolean(target.pinnedAt);
+                        return (
+                            <button
+                                type="button"
+                                className="context-menu-item"
+                                disabled={pinMessageMutation.isPending || unpinMessageMutation.isPending}
+                                onClick={async () => {
+                                    if (!activeThread) return;
+                                    if (targetPinned) {
+                                        await unpinMessageMutation.mutateAsync({
+                                            threadId: activeThread.id,
+                                            messageId: target.id
+                                        });
+                                    } else {
+                                        await pinMessageMutation.mutateAsync({
+                                            threadId: activeThread.id,
+                                            messageId: target.id
+                                        });
+                                    }
+                                    setMessageContextMenu(null);
+                                }}
+                            >
+                                {targetPinned ? "Unpin Message" : "Pin Message"}
+                            </button>
+                        );
+                    })()}
+
                     {messageContextMenu.message.userId === meQuery.data?.user.id && (
                         <>
                             <button
@@ -2760,6 +2921,102 @@ const updateProfileMutation = useMutation({
                                 </button>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {pinnedPanelOpen && activeThread && (
+                <div className="overlay-backdrop" onClick={() => setPinnedPanelOpen(false)}>
+                    <div
+                        className="overlay-panel room-overlay pinned-panel"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="room-overlay-header">
+                            <strong>Pinned Messages ({(pinnedMessagesQuery.data ?? []).length})</strong>
+                            <button
+                                className="button"
+                                type="button"
+                                onClick={() => setPinnedPanelOpen(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {(pinMessageMutation.error || unpinMessageMutation.error) && (
+                            <p className="error">
+                                {((pinMessageMutation.error || unpinMessageMutation.error) as Error).message}
+                            </p>
+                        )}
+
+                        {pinnedMessagesQuery.isLoading ? (
+                            <div className="muted">Loading pinned messages…</div>
+                        ) : (pinnedMessagesQuery.data ?? []).length === 0 ? (
+                            <div className="muted">
+                                No pinned messages in this thread yet.
+                                {canPinInThread(activeThread) ? " Hover or right-click a message to pin it." : ""}
+                            </div>
+                        ) : (
+                            <div className="pinned-list">
+                                {(pinnedMessagesQuery.data ?? []).map((pin) => {
+                                    const canJump = messagesById.has(pin.messageId);
+                                    return (
+                                        <div key={pin.pinId} className="pinned-card">
+                                            <div className="pinned-card-header">
+                                                <div className="pinned-card-author">
+                                                    <AvatarSquare
+                                                        displayName={pin.displayName}
+                                                        avatarUrl={pin.avatarUrl}
+                                                        size="sm"
+                                                    />
+                                                    <div>
+                                                        <strong>{pin.displayName}</strong>{" "}
+                                                        <span className="muted">@{pin.username}</span>
+                                                        <div className="muted pinned-card-meta">
+                                                            {new Date(pin.createdAt).toLocaleString()} · Pinned by @{pin.pinnedByUsername}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="pinned-card-actions">
+                                                    <button
+                                                        type="button"
+                                                        className="button"
+                                                        disabled={!canJump}
+                                                        title={canJump ? "Jump to message" : "Message is outside loaded history"}
+                                                        onClick={() => {
+                                                            setPinnedPanelOpen(false);
+                                                            requestAnimationFrame(() => scrollToMessage(pin.messageId));
+                                                        }}
+                                                    >
+                                                        Jump
+                                                    </button>
+
+                                                    {canPinInThread(activeThread) && (
+                                                        <button
+                                                            type="button"
+                                                            className="button button-danger"
+                                                            disabled={unpinMessageMutation.isPending}
+                                                            onClick={() =>
+                                                                unpinMessageMutation.mutate({
+                                                                    threadId: activeThread.id,
+                                                                    messageId: pin.messageId
+                                                                })
+                                                            }
+                                                        >
+                                                            Unpin
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="pinned-card-body">
+                                                {renderMessageBody(pin.body, meQuery.data?.user.username, joinFromRoomPass)}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
