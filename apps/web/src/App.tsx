@@ -50,7 +50,7 @@ import { AvatarSquare } from "./components/Avatars";
 import { ProfileScreen } from "./components/ProfileScreen";
 import { ConversationSidebar } from "./components/ConversationSidebar";
 import { AuthScreen } from "./components/AuthScreen";
-import { SearchDatePicker, SearchUserPicker } from "./components/SearchControls";
+import { SearchOverlay } from "./components/SearchOverlay";
 import { MessageTimeline } from "./components/MessageTimeline";
 import { MessageComposer } from "./components/MessageComposer";
 import { RoomIconPanel, RoomJoinPanel, RoomPassPanel, UserProfilePanel } from "./components/RoomPanels";
@@ -841,31 +841,33 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 />
             )}
             {searchOpen && (
-                <div className="overlay-backdrop" onClick={() => setSearchOpen(false)}>
-                    <div className="overlay-panel search-overlay" role="dialog" aria-modal="true" aria-label="Search messages" onClick={(event) => event.stopPropagation()}>
-                        <div className="room-overlay-header">
-                            <strong>Search in {searchContext?.label}</strong>
-                            <button className="button" type="button" onClick={() => setSearchOpen(false)}>Close</button>
-                        </div>
-                        <form className="search-form" onSubmit={(event) => { event.preventDefault(); if (searchContext) setSubmittedSearch({ ...searchFilters, roomId: searchContext.roomId, threadId: searchContext.roomId ? searchFilters.threadId : searchContext.threadId, q: searchFilters.q?.trim() }); }}>
-                            <label className="stack search-wide"><span>Text</span><input ref={searchInputRef} autoFocus placeholder="Search message text" value={searchFilters.q ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, q: event.target.value }))} /></label>
-                            <SearchUserPicker label="Sent from" users={sidePanelUsers} value={searchFilters.userId} valueKey="id" onChange={(userId) => setSearchFilters((filters) => ({ ...filters, userId }))} />
-                            {searchContext?.roomId && <label className="stack"><span>Thread</span><select value={searchFilters.threadId ?? ""} onChange={(event) => setSearchFilters((value) => ({ ...value, threadId: event.target.value || undefined }))}><option value="">All threads</option>{roomThreads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select></label>}
-                            <SearchDatePicker label="From date" value={searchFilters.after} onChange={(after) => setSearchFilters((filters) => ({ ...filters, after }))} />
-                            <SearchDatePicker label="Through date" value={searchFilters.before} onChange={(before) => setSearchFilters((filters) => ({ ...filters, before }))} />
-                            <SearchUserPicker label="Mentions" users={sidePanelUsers} value={searchFilters.mentions} valueKey="username" onChange={(mentions) => setSearchFilters((filters) => ({ ...filters, mentions }))} />
-                            <div className="search-checks"><label><input type="checkbox" checked={Boolean(searchFilters.hasLink)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasLink: event.target.checked }))} /> Links</label><label><input type="checkbox" checked={Boolean(searchFilters.hasAttachment)} onChange={(event) => setSearchFilters((value) => ({ ...value, hasAttachment: event.target.checked }))} /> Attachments</label></div>
-                            <button className="button button-primary search-wide" type="submit">Search</button>
-                        </form>
-                        <div className="search-results" aria-live="polite">
-                            {searchQuery.isPending && submittedSearch && <p className="muted">Searching…</p>}
-                            {searchQuery.isError && <p className="error">{(searchQuery.error as Error).message}</p>}
-                            {searchQuery.data?.pages.flatMap((page) => page.messages).map((result) => <button className="search-result" type="button" key={result.id} onClick={() => openSearchResult(result)}><span className="muted">{result.roomName ? `${result.roomName} / ` : ""}{result.threadTitle} · @{result.username} · {new Date(result.createdAt).toLocaleString()}</span><span>{result.body}</span></button>)}
-                            {searchQuery.data && searchQuery.data.pages[0].messages.length === 0 && <p className="muted">No messages found.</p>}
-                            {searchQuery.hasNextPage && <button className="button" type="button" disabled={searchQuery.isFetchingNextPage} onClick={() => void searchQuery.fetchNextPage()}>{searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}</button>}
-                        </div>
-                    </div>
-                </div>
+                <SearchOverlay
+                    context={searchContext}
+                    filters={searchFilters}
+                    setFilters={setSearchFilters}
+                    users={sidePanelUsers}
+                    threads={roomThreads}
+                    inputRef={searchInputRef}
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!searchContext) return;
+                        setSubmittedSearch({
+                            ...searchFilters,
+                            roomId: searchContext.roomId,
+                            threadId: searchContext.roomId ? searchFilters.threadId : searchContext.threadId,
+                            q: searchFilters.q?.trim()
+                        });
+                    }}
+                    onClose={() => setSearchOpen(false)}
+                    pending={searchQuery.isPending && submittedSearch !== null}
+                    hasResults={Boolean(searchQuery.data)}
+                    error={searchQuery.isError ? searchQuery.error : null}
+                    results={searchQuery.data?.pages.flatMap((page) => page.messages) ?? []}
+                    hasNextPage={Boolean(searchQuery.hasNextPage)}
+                    fetchingNextPage={searchQuery.isFetchingNextPage}
+                    onFetchNextPage={() => void searchQuery.fetchNextPage()}
+                    onOpenResult={openSearchResult}
+                />
             )}
             <ConversationSidebar
                 user={meQuery.data?.user}
