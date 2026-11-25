@@ -52,6 +52,23 @@ import { PwaPrompt } from "./components/PwaPrompt";
 import { DesktopUpdater } from "./components/DesktopUpdater";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
+const DRAFT_STORAGE_KEY = "starbyte.thread-drafts";
+
+function loadDrafts(): Record<string, Record<string, string>> {
+    try {
+        const stored = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? "{}");
+        if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+
+        return Object.fromEntries(Object.entries(stored).map(([userId, drafts]) => [
+            userId,
+            drafts && typeof drafts === "object" && !Array.isArray(drafts)
+                ? Object.fromEntries(Object.entries(drafts).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+                : {}
+        ]));
+    } catch {
+        return {};
+    }
+}
 
 function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     const [mode, setMode] = useState<"login" | "register">("login");
@@ -714,7 +731,42 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const UPLOADED_IMAGE_RE = /^\/api\/uploads\/images\/[a-f0-9-]+\.(?:png|jpg|gif|webp)$/i;
 
     useSocket(Boolean(meQuery.data?.user));
-    const [draft, setDraft] = useState("");
+    const [draftsByUser, setDraftsByUser] = useState(loadDrafts);
+    const userId = meQuery.data?.user.id;
+    const threadId = activeThread?.id;
+    const draft = userId && threadId ? draftsByUser[userId]?.[threadId] ?? "" : "";
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftsByUser));
+        } catch {
+            // Drafts remain available in this session if local storage is unavailable.
+        }
+    }, [draftsByUser]);
+
+    function setDraftForThread(targetThreadId: string, value: string | ((current: string) => string)) {
+        if (!userId) return;
+
+        setDraftsByUser((current) => {
+            const userDrafts = current[userId] ?? {};
+            const previous = userDrafts[targetThreadId] ?? "";
+            const nextValue = typeof value === "function" ? value(previous) : value;
+            if (previous === nextValue) return current;
+
+            const nextUserDrafts = { ...userDrafts };
+            if (nextValue) nextUserDrafts[targetThreadId] = nextValue;
+            else delete nextUserDrafts[targetThreadId];
+
+            const next = { ...current };
+            if (Object.keys(nextUserDrafts).length) next[userId] = nextUserDrafts;
+            else delete next[userId];
+            return next;
+        });
+    }
+
+    function setDraft(value: string | ((current: string) => string)) {
+        if (threadId) setDraftForThread(threadId, value);
+    }
 
     function isNearBottom(element: HTMLElement) {
         return element.scrollHeight - element.scrollTop - element.clientHeight < 48;
@@ -766,36 +818,29 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     });
 
     const uploadChatImageMutation = useMutation({
-        mutationFn: (file: File) => uploadImage(file),
-        onSuccess: (data) => {
-            setDraft((current) => current.trim() ? `${current.trim()} ${data.url}` : data.url);
-            requestAnimationFrame(() => composerRef.current?.focus());
+        mutationFn: ({ file }: { file: File; threadId: string }) => uploadImage(file),
+        onSuccess: (data, variables) => {
+            setDraftForThread(variables.threadId, (current) => current.trim() ? `${current.trim()} ${data.url}` : data.url);
+            if (activeThread?.id === variables.threadId) requestAnimationFrame(() => composerRef.current?.focus());
         }
     });
 
     const sendMutation = useMutation({
-        mutationFn: async () => {
-            if (!activeThread) {
-                throw new Error("Pick a thread first");
+        mutationFn: ({ threadId, body, replyToMessageId }: { threadId: string; body: string; replyToMessageId: string | null }) => {
+            return sendMessage(threadId, { body, replyToMessageId });
+        },
+        onSuccess: async (data, variables) => {
+            setDraftForThread(variables.threadId, (current) => current.trim() === variables.body ? "" : current);
+            if (activeThread?.id === variables.threadId) {
+                setMentionOpen(false);
+                setMentionQuery("");
+                setMentionStart(null);
+                setSelectedMentionIndex(0);
+                if (replyingToMessage?.id === variables.replyToMessageId) setReplyingToMessage(null);
             }
 
-            return sendMessage(activeThread.id, {
-                body: draft.trim(),
-                replyToMessageId: replyingToMessage?.id ?? null
-            });
-        },
-        onSuccess: async (data) => {
-            if (!activeThread) return;
-
-            setDraft("");
-            setMentionOpen(false);
-            setMentionQuery("");
-            setMentionStart(null);
-            setSelectedMentionIndex(0);
-            setReplyingToMessage(null);
-
             queryClient.setQueryData(
-                ["messages", activeThread.id],
+                ["messages", variables.threadId],
                 (current: typeof messagesQuery.data | undefined) => {
                     const list = current ?? [];
                     return list.some((message) => message.id === data.message.id)
@@ -805,7 +850,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             );
 
             await queryClient.invalidateQueries({
-                queryKey: ["messages", activeThread.id]
+                queryKey: ["messages", variables.threadId]
             });
         }
     });
@@ -867,7 +912,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     const deleteThreadMutation = useMutation({
         mutationFn: async (threadId: string) => deleteThread(threadId),
-        onSuccess: async () => {
+        onSuccess: async (_data, deletedThreadId) => {
+            setDraftForThread(deletedThreadId, "");
             await queryClient.invalidateQueries({ queryKey: ["threads", activeRoomId] });
 
             if (sidebarMode === "threads" && activeRoomId) {
@@ -1458,9 +1504,9 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     function handleSend(event: SyntheticEvent) {
         event.preventDefault();
-        if (!draft.trim()) return;
+        if (!activeThread || !draft.trim()) return;
 
-        sendMutation.mutate();
+        sendMutation.mutate({ threadId: activeThread.id, body: draft.trim(), replyToMessageId: replyingToMessage?.id ?? null });
     }
 
     function handleProfileSave(event: SyntheticEvent) {
@@ -2363,7 +2409,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                         disabled={uploadChatImageMutation.isPending}
                                         onChange={(event) => {
                                             const file = event.target.files?.[0];
-                                            if (file) uploadChatImageMutation.mutate(file);
+                                            if (file && activeThread) uploadChatImageMutation.mutate({ file, threadId: activeThread.id });
                                             event.target.value = "";
                                         }}
                                     />
