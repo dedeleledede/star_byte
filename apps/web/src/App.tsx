@@ -49,9 +49,9 @@ import {
 } from "./api";
 import { useSocket } from "./hooks/useSocket";
 import { PwaPrompt } from "./components/PwaPrompt";
-import { DesktopUpdater } from "./components/DesktopUpdater";
-import { AvatarSquare, RoomAvatar } from "./components/Avatars";
+import { AvatarSquare } from "./components/Avatars";
 import { ProfileScreen } from "./components/ProfileScreen";
+import { ConversationSidebar } from "./components/ConversationSidebar";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 const DRAFT_STORAGE_KEY = "starbyte.thread-drafts";
@@ -1636,229 +1636,39 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                     </div>
                 </div>
             )}
-            <aside className="sidebar">
-                <div className="sidebar-header">
-                    <div className="sidebar-profile">
-                        <AvatarSquare
-                            displayName={meQuery.data?.user.displayName ?? "?"}
-                            avatarUrl={meQuery.data?.user.avatarUrl}
-                            size="lg"/>
-
-                    <div className="sidebar-profile-copy">
-                    <strong>{meQuery.data?.user.displayName}</strong>
-                    <div className="muted">@{meQuery.data?.user.username}</div>
-                    {meQuery.data?.user.statusText && (
-                    <div className="muted">{meQuery.data.user.statusText}</div>
-                    )}
-                    </div>
-
-                        <div className="sidebar-header-actions">
-                            <button
-                                type="button"
-                                className="icon-button"
-                                onClick={() => {
-                                    setScreen("thread");
-                                    setSidebarMode((value) => value === "threads" ? "whispers" : "threads");
-                                }}
-                                aria-label="Whispers"
-                                title="Whispers"
-                            >
-                                ✉
-                            </button>
-
-                            <button
-                                type="button"
-                                className="icon-button"
-                                onClick={() => setAccountMenuOpen((value) => !value)}
-                                aria-label="Account settings"
-                                title="Account settings"
-                            >
-                                ⚙
-                            </button>
-                        </div>
-
-                    </div>
-
-                    {unreadMentionCount > 0 && (
-                        <div className="mention-badge">
-                            {unreadMentionCount} mention{unreadMentionCount === 1 ? "" : "s"}
-                        </div>
-                    )}
-
-                  {accountMenuOpen && (
-                      <div className="account-menu">
-                          <label className="stack">
-                              <span className="muted">Theme</span>
-                              <select value={theme} onChange={(event) => onThemeChange(event.target.value)}>
-                                  <option value="dark">Dark</option>
-                                  <option value="light">Light</option>
-                                  <option value="dracula">Dracula</option>
-                                  <option value="deep-forest">Deep Forest</option>
-                              </select>
-                          </label>
-
-                          <button
-                              className="button"
-                              type="button"
-                              onClick={() => {
-                                  setScreen("profile");
-                                  setAccountMenuOpen(false);
-                              }}
-                          >
-                              Edit profile
-                          </button>
-
-                          {IS_TAURI && <DesktopUpdater />}
-
-                          <button
-                              className="button"
-                              type="button"
-                              onClick={() => {
-                                  setAccountMenuOpen(false);
-                                  logout();
-                              }}
-                          >
-                              Logout
-                          </button>
-                      </div>
-                  )}
-              </div>
-
-                <div className="section-title">Rooms</div>
-
-                <div className="room-grid-box">
-                    <div className="room-grid">
-                        {rooms.map((room: Room) => (
-                            <button
-                                key={room.id}
-                                className={`room-card ${activeRoom?.id === room.id ? "room-card-active" : ""}`}
-                                onClick={() => openRoom(room.id)}
-                                onContextMenu={(event) => {
-                                    event.preventDefault();
-                                    setRoomContextMenu({
-                                        type: "room",
-                                        id: room.id,
-                                        x: event.clientX,
-                                        y: event.clientY
-                                    });
-                                }}
-                                onMouseEnter={(event) =>
-                                    setRoomTooltip({
-                                        text: room.name,
-                                        x: event.clientX + 12,
-                                        y: event.clientY - 8
-                                    })
-                                }
-                                onMouseMove={(event) =>
-                                    setRoomTooltip({
-                                        text: room.name,
-                                        x: event.clientX + 12,
-                                        y: event.clientY - 8
-                                    })
-                                }
-                                onMouseLeave={() => setRoomTooltip(null)}
-                            >
-                                <RoomAvatar room={room} />
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="sidebar-tools room-actions room-actions-bottom">
-                    <button
-                        className="button room-add-button"
-                        type="button"
-                        onClick={() => setRoomOverlayOpen(true)}
-                        title="Create or join room"
-                    >
-                        +
-                    </button>
-                </div>
-
-                <div className="section-title">{sidebarMode === "threads" ? "Threads" : "Whispers"}</div>
-
-                {sidebarMode === "threads" ? (
-                    <>
-                        <div className="thread-list">
-                            {threadsQuery.isFetching && threads.length === 0 ? (
-                                <div className="muted">Loading threads…</div>
-                            ) : threads.length === 0 ? (
-                                <div className="muted">No threads in this room yet.</div>
-                            ) : (
-                                roomThreads.map((thread: Thread) => (
-                                    <button
-                                        key={thread.id}
-                                        className={`thread-item ${activeThread?.id === thread.id ? "thread-item-active" : ""}`}
-                                        onClick={() => {
-                                            if (!activeRoom?.id) return;
-                                            openRoomThread(activeRoom.id, thread.id);
-                                        }}
-                                        onContextMenu={(event) => {
-                                            if (!canDeleteRoomThread(thread)) return;
-                                            event.preventDefault();
-                                            setRoomContextMenu({
-                                                type: "thread",
-                                                id: thread.id,
-                                                x: event.clientX,
-                                                y: event.clientY
-                                            });
-                                        }}
-                                    >
-                                        <span>{thread.kind === "whisper" ? "@" : "#"}</span>
-                                        <span>{thread.title}</span>
-                                    </button>
-                                ))
-                            )}
-                        </div>
-
-                        <div className="sidebar-tools stack">
-                            <input
-                                placeholder={activeRoom ? "New thread" : "Pick a room first"}
-                                value={newThreadTitle}
-                                onChange={(event) => {
-                                    setNewThreadTitle(event.target.value);
-                                    createThreadMutation.reset();
-                                }}
-                                disabled={!activeRoom || createThreadMutation.isPending}
-                            />
-                            <button
-                                className="button"
-                                type="button"
-                                onClick={handleCreateThread}
-                                disabled={!activeRoom || createThreadMutation.isPending || !newThreadTitle.trim()}
-                            >
-                                {createThreadMutation.isPending ? "Creating..." : "Create Thread"}
-                            </button>
-                            {createThreadMutation.error && (
-                                <p className="error">{(createThreadMutation.error as Error).message}</p>
-                            )}
-                            {deleteThreadMutation.error && (
-                                <p className="error">{(deleteThreadMutation.error as Error).message}</p>
-                            )}
-                        </div>
-                    </>
-                ) : (
-                    <div className="thread-list">
-                        {whispersQuery.isFetching && whispers.length === 0 ? (
-                            <div className="muted">Loading whispers…</div>
-                        ) : whispers.length === 0 ? (
-                            <div className="muted">No whispers yet.</div>
-                        ) : (
-                            whispers.map((thread: Thread) => (
-                                <button
-                                    key={thread.id}
-                                    className={`thread-item ${activeThread?.id === thread.id ? "thread-item-active" : ""}`}
-                                    onClick={() => openWhisper(thread.id)}
-                                >
-                                    <span>@</span>
-                                    <span>{thread.title}</span>
-                                </button>
-                            ))
-                        )}
-                    </div>
-                )}
-
-            </aside>
+            <ConversationSidebar
+                user={meQuery.data?.user}
+                theme={theme}
+                onThemeChange={onThemeChange}
+                accountMenuOpen={accountMenuOpen}
+                onToggleAccountMenu={() => setAccountMenuOpen((value) => !value)}
+                onEditProfile={() => { setScreen("profile"); setAccountMenuOpen(false); }}
+                onLogout={() => { setAccountMenuOpen(false); logout(); }}
+                onToggleMode={() => { setScreen("thread"); setSidebarMode((value) => value === "threads" ? "whispers" : "threads"); }}
+                unreadMentionCount={unreadMentionCount}
+                rooms={rooms}
+                activeRoom={activeRoom}
+                onOpenRoom={openRoom}
+                onRoomContextMenu={setRoomContextMenu}
+                onRoomTooltip={setRoomTooltip}
+                onOpenRoomOverlay={() => setRoomOverlayOpen(true)}
+                sidebarMode={sidebarMode}
+                threadsLoading={threadsQuery.isFetching}
+                roomThreads={roomThreads}
+                activeThreadId={activeThread?.id}
+                onOpenRoomThread={openRoomThread}
+                canDeleteRoomThread={canDeleteRoomThread}
+                newThreadTitle={newThreadTitle}
+                onNewThreadTitleChange={(title) => setNewThreadTitle(title)}
+                onResetCreateThread={() => createThreadMutation.reset()}
+                createThreadPending={createThreadMutation.isPending}
+                onCreateThread={handleCreateThread}
+                createThreadError={createThreadMutation.error}
+                deleteThreadError={deleteThreadMutation.error}
+                whispersLoading={whispersQuery.isFetching}
+                whispers={whispers}
+                onOpenWhisper={openWhisper}
+            />
 
             {screen === "profile" ? (
                 <ProfileScreen
