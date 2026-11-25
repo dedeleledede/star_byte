@@ -51,6 +51,7 @@ import { ConversationSidebar } from "./components/ConversationSidebar";
 import { AuthScreen } from "./components/AuthScreen";
 import { SearchOverlay } from "./components/SearchOverlay";
 import { RoomUsersPanel } from "./components/RoomUsersPanel";
+import { MessageContextMenu, RoomContextMenu } from "./components/ContextMenus";
 import { MessageTimeline } from "./components/MessageTimeline";
 import { MessageComposer } from "./components/MessageComposer";
 import { RoomIconPanel, RoomJoinPanel, RoomPassPanel, UserProfilePanel } from "./components/RoomPanels";
@@ -1041,107 +1042,47 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             )}
 
             {roomContextMenu && (
-                <div
-                    className="context-menu" style={{ left: roomContextMenu.x, top: roomContextMenu.y }}
-                >
-                    {roomContextMenu.type === "room" ? (
-                        <>
-                            <button
-                                type="button"
-                                className="context-menu-item"
-                                onClick={() => {
-                                    setRoomPassPanelRoomId(roomContextMenu.id);
-                                    setCopiedRoomPass(false);
-                                    setRoomContextMenu(null);
-                                }}
-                            >
-                                Room Pass
-                            </button>
-
-                            <button
-                                type="button"
-                                className="context-menu-item"
-                                onClick={() => {
-                                    const room = rooms.find((item) => item.id === roomContextMenu.id);
-                                    setRoomIconPanelRoomId(roomContextMenu.id);
-                                    setRoomIconDraft(room?.iconUrl ?? "");
-                                    setRoomContextMenu(null);
-                                }}
-                            >
-                                Change Room Icon
-                            </button>
-
-                            <button
-                                type="button"
-                                className="context-menu-item context-menu-item-danger"
-                                onClick={async () => {
-                                    await deleteRoomMutation.mutateAsync(roomContextMenu.id);
-                                    setRoomContextMenu(null);
-                                }}
-                            >
-                                Delete Room
-                            </button>
-                        </>
-                    ) : (
-                        <button
-                            type="button"
-                            className="context-menu-item context-menu-item-danger"
-                            onClick={async () => {
-                                await deleteThreadMutation.mutateAsync(roomContextMenu.id);
-                                setRoomContextMenu(null);
-                            }}
-                        >
-                            Delete Thread
-                        </button>
-                    )}
-                </div>
+                <RoomContextMenu
+                    menu={roomContextMenu}
+                    onRoomPass={() => {
+                        setRoomPassPanelRoomId(roomContextMenu.id);
+                        setCopiedRoomPass(false);
+                        setRoomContextMenu(null);
+                    }}
+                    onRoomIcon={() => {
+                        const room = rooms.find((item) => item.id === roomContextMenu.id);
+                        setRoomIconPanelRoomId(roomContextMenu.id);
+                        setRoomIconDraft(room?.iconUrl ?? "");
+                        setRoomContextMenu(null);
+                    }}
+                    onDeleteRoom={async () => {
+                        await deleteRoomMutation.mutateAsync(roomContextMenu.id);
+                        setRoomContextMenu(null);
+                    }}
+                    onDeleteThread={async () => {
+                        await deleteThreadMutation.mutateAsync(roomContextMenu.id);
+                        setRoomContextMenu(null);
+                    }}
+                />
             )}
 
             {messageContextMenu && (
-                <div
-                    className="context-menu"
-                    style={{ left: messageContextMenu.x, top: messageContextMenu.y }}
-                >
-                    <button
-                        type="button"
-                        className="context-menu-item"
-                        onClick={() => {
-                            startReplyingToMessage(messageContextMenu.message);
-                        }}
-                    >
-                        Reply
-                    </button>
-
-                    {messageContextMenu.message.userId === meQuery.data?.user.id && (
-                        <>
-                            <button
-                                type="button"
-                                className="context-menu-item"
-                                onClick={() => {
-                                    startEditingMessage(messageContextMenu.message);
-                                    setMessageContextMenu(null);
-                                }}
-                            >
-                                Edit Message
-                            </button>
-
-                            <button
-                                type="button"
-                                className="context-menu-item context-menu-item-danger"
-                                onClick={async () => {
-                                    if (!activeThread) return;
-
-                                    await deleteMessageMutation.mutateAsync({
-                                        threadId: activeThread.id,
-                                        messageId: messageContextMenu.message.id
-                                    });
-                                }}
-                            >
-                                Delete Message
-                            </button>
-                        </>
-                    )}
-                </div>
+                <MessageContextMenu
+                    menu={messageContextMenu}
+                    currentUserId={meQuery.data?.user.id}
+                    onReply={() => startReplyingToMessage(messageContextMenu.message)}
+                    onEdit={() => {
+                        startEditingMessage(messageContextMenu.message);
+                        setMessageContextMenu(null);
+                    }}
+                    onDelete={async () => {
+                        if (!activeThread) return;
+                        await deleteMessageMutation.mutateAsync({
+                            threadId: activeThread.id,
+                            messageId: messageContextMenu.message.id
+                        });
+                    }}
+                />
             )}
 
             {roomPassPanelRoom && (
