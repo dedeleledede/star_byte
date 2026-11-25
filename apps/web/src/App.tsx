@@ -50,19 +50,9 @@ import { ProfileScreen } from "./components/ProfileScreen";
 import { ConversationSidebar } from "./components/ConversationSidebar";
 import { AuthScreen } from "./components/AuthScreen";
 import { SearchDatePicker, SearchUserPicker } from "./components/SearchControls";
-import { extractUrls, MessageAttachment, MessageEmbed, renderMessageBody, UPLOADED_IMAGE_RE } from "./components/MessageContent";
+import { MessageTimeline } from "./components/MessageTimeline";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
-function isGroupedWithPrevious(current: { userId: string; createdAt: string }, previous?: { userId: string; createdAt: string }) {
-    if (!previous) return false;
-    if (previous.userId !== current.userId) return false;
-
-    const currentTime = new Date(current.createdAt).getTime();
-    const previousTime = new Date(previous.createdAt).getTime();
-
-    return currentTime - previousTime < 10 * 60 * 1000;
-}
-
 function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void; theme: string; onThemeChange: (theme: string) => void; }) {
     const queryClient = useQueryClient();
 
@@ -221,10 +211,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         const entries = (usersQuery.data ?? []).map((user) => [user.id, user] as const);
         return new Map(entries);
     }, [usersQuery.data]);
-
-    const messagesById = useMemo(() => {
-        return new Map((messagesQuery.data ?? []).map((message) => [message.id, message]));
-    }, [messagesQuery.data]);
 
     const roomPassPanelRoom = useMemo(() => rooms.find((room) => room.id === roomPassPanelRoomId) ?? null, [rooms, roomPassPanelRoomId]);
 
@@ -1130,261 +1116,28 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                 <button className="button search-compact-button" type="button" onClick={openSearch}>Search</button>
                             </header>
 
-                            <section
-                                className="messages"
-                                ref={messagesRef}
-                                onScroll={(event) => {
-                                    stickToBottomRef.current = isNearBottom(event.currentTarget);
-                                }}
-                            >
-                                {(messagesQuery.data ?? []).map((message, index, list) => {
-                                    const previous = list[index - 1];
-                                    const grouped = isGroupedWithPrevious(message, previous);
-                                    const urls = extractUrls(message.body);
-                                    const isEditing = editingMessageId === message.id;
-                                    const isOwnMessage = message.userId === meQuery.data?.user.id;
-                                    const repliedTo = message.replyToMessageId ? messagesById.get(message.replyToMessageId) : null;
-
-                                    return (
-                                        <article
-                                            key={message.id}
-                                            ref={(element) => {
-                                                messageRefs.current[message.id] = element;
-                                            }}
-                                            className={[
-                                                "message-line",
-                                                grouped ? "message-line-grouped" : "",
-                                                searchTarget?.messageId === message.id ? "message-line-search-target" : ""
-                                            ].filter(Boolean).join(" ")}
-                                            onContextMenu={(event) => {
-                                                event.preventDefault();
-                                                setMessageContextMenu({
-                                                    message,
-                                                    x: event.clientX,
-                                                    y: event.clientY
-                                                });
-                                            }}
-                                        >
-                                            {!grouped ? (
-                                                <div className="message-main">
-                                                    <button
-                                                        type="button"
-                                                        className="avatar-button"
-                                                        onClick={(event) => handleChatIdentityClick(message.userId, message.username, event.shiftKey)}
-                                                    >
-                                                        <AvatarSquare
-                                                            displayName={message.displayName}
-                                                            avatarUrl={message.avatarUrl}
-                                                            size="sm"
-                                                        />
-                                                    </button>
-
-                                                    <div className="message-body-block">
-                                                        <div className="message-meta">
-                                                            <span
-                                                                className="message-author-text"
-                                                                onMouseUp={(event) => handleAuthorMouseUp(event, message.userId, message.username)}
-                                                            >
-                                                                <strong>{message.displayName}</strong>
-                                                                <span className="muted">@{message.username}</span>
-                                                            </span>
-
-                                                            <span className="muted">
-                                                                {new Date(message.createdAt).toLocaleTimeString()}
-                                                            </span>
-                                                        </div>
-
-                                                        <div className="message-text">
-                                                            <span className="message-prefix">&gt;</span>
-
-                                                            <div className="stack message-content">
-                                                                {isEditing ? (
-                                                                    <div className="message-edit-inline">
-                                                                        <input
-                                                                            value={editingDraft}
-                                                                            onChange={(event) => setEditingDraft(event.target.value)}
-                                                                            onKeyDown={(event) => {
-                                                                                if (event.key === "Enter" && editingDraft.trim() && !updateMessageMutation.isPending) {
-                                                                                    event.preventDefault();
-                                                                                    updateMessageMutation.mutate();
-                                                                                }
-                                                                                if (event.key === "Escape") {
-                                                                                    event.preventDefault();
-                                                                                    cancelEditingMessage();
-                                                                                }
-                                                                            }}
-                                                                            autoFocus
-                                                                        />
-
-                                                                        <div className="message-inline-actions message-inline-actions-visible">
-                                                                            <button
-                                                                                type="button"
-                                                                                className="button button-primary"
-                                                                                onClick={() => updateMessageMutation.mutate()}
-                                                                                disabled={updateMessageMutation.isPending || !editingDraft.trim()}
-                                                                            >
-                                                                                {updateMessageMutation.isPending ? "Saving..." : "Save"}
-                                                                            </button>
-
-                                                                            <button
-                                                                                type="button"
-                                                                                className="button"
-                                                                                onClick={cancelEditingMessage}
-                                                                                disabled={updateMessageMutation.isPending}
-                                                                            >
-                                                                                Cancel
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <>
-                                                                        {message.replyToMessageId && (
-                                                                            <button
-                                                                                type="button"
-                                                                                className="message-reply-reference"
-                                                                                onClick={() => repliedTo && scrollToMessage(repliedTo.id)}
-                                                                                disabled={!repliedTo}
-                                                                            >
-                                                                                {repliedTo
-                                                                                    ? `Replying to @${repliedTo.username}: ${repliedTo.body.slice(0, 80)}`
-                                                                                    : "Original message unavailable"}
-                                                                            </button>
-                                                                        )}
-                                                                        <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass, validMentionUsernames)}</span>
-
-                                                                        {urls.map((url) => (
-                                                                            UPLOADED_IMAGE_RE.test(url) ? (
-                                                                                <MessageAttachment key={url} url={url} />
-                                                                            ) : (
-                                                                                <MessageEmbed
-                                                                                    key={url}
-                                                                                    url={url}
-                                                                                    onJoinRoomPass={joinFromRoomPass}
-                                                                                />
-                                                                            )
-                                                                        ))}
-                                                                    </>
-                                                                )}
-                                                            </div>
-
-                                                            {!isEditing ? (
-                                                                <div className="message-actions">
-                                                                    <button
-                                                                        type="button"
-                                                                        className="message-inline-action"
-                                                                        onClick={() => startReplyingToMessage(message)}
-                                                                    >
-                                                                        Reply
-                                                                    </button>
-                                                                    {isOwnMessage && <button
-                                                                        type="button"
-                                                                        className="message-inline-action"
-                                                                        onClick={() => startEditingMessage(message)}
-                                                                    >
-                                                                        Edit
-                                                                    </button>}
-                                                                </div>
-                                                            ) : (
-                                                                <div className="message-actions-placeholder" />
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="message-text message-text-grouped">
-                                                    <span className="message-prefix">&gt;</span>
-
-                                                    <div className="stack message-content">
-                                                        {isEditing ? (
-                                                            <div className="message-edit-inline">
-                                                                <input
-                                                                    value={editingDraft}
-                                                                    onChange={(event) => setEditingDraft(event.target.value)}
-                                                                    onKeyDown={(event) => {
-                                                                        if (event.key === "Enter" && editingDraft.trim() && !updateMessageMutation.isPending) {
-                                                                            event.preventDefault();
-                                                                            updateMessageMutation.mutate();
-                                                                        }
-                                                                        if (event.key === "Escape") {
-                                                                            event.preventDefault();
-                                                                            cancelEditingMessage();
-                                                                        }
-                                                                    }}
-                                                                    autoFocus
-                                                                />
-                                                                <div className="message-inline-actions message-inline-actions-visible">
-                                                                    <button
-                                                                        type="button"
-                                                                        className="button button-primary"
-                                                                        onClick={() => updateMessageMutation.mutate()}
-                                                                        disabled={updateMessageMutation.isPending || !editingDraft.trim()}
-                                                                    >
-                                                                        {updateMessageMutation.isPending ? "Saving..." : "Save"}
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="button"
-                                                                        onClick={cancelEditingMessage}
-                                                                        disabled={updateMessageMutation.isPending}
-                                                                    >
-                                                                        Cancel
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                {message.replyToMessageId && (
-                                                                    <button
-                                                                        type="button"
-                                                                        className="message-reply-reference"
-                                                                        onClick={() => repliedTo && scrollToMessage(repliedTo.id)}
-                                                                        disabled={!repliedTo}
-                                                                    >
-                                                                        {repliedTo
-                                                                            ? `Replying to @${repliedTo.username}: ${repliedTo.body.slice(0, 80)}`
-                                                                            : "Original message unavailable"}
-                                                                    </button>
-                                                                )}
-                                                                <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass, validMentionUsernames)}</span>
-                                                                {urls.map((url) => (
-                                                                    UPLOADED_IMAGE_RE.test(url) ? (
-                                                                        <MessageAttachment key={url} url={url} />
-                                                                    ) : (
-                                                                        <MessageEmbed
-                                                                            key={url}
-                                                                            url={url}
-                                                                            onJoinRoomPass={joinFromRoomPass}
-                                                                        />
-                                                                    )
-                                                                ))}
-                                                            </>
-                                                        )}
-                                                    </div>
-
-                                                    {!isEditing ? <div className="message-actions">
-                                                        <button
-                                                            type="button"
-                                                            className="message-inline-action"
-                                                            onClick={() => startReplyingToMessage(message)}
-                                                        >
-                                                            Reply
-                                                        </button>
-                                                        {isOwnMessage && (
-                                                            <button
-                                                                type="button"
-                                                                className="message-inline-action"
-                                                                onClick={() => startEditingMessage(message)}
-                                                            >
-                                                                Edit
-                                                            </button>
-                                                        )}
-                                                    </div> : <div className="message-actions-placeholder" />}
-                                                </div>
-                                            )}
-                                        </article>
-                                    );
-                                })}
-                            </section>
+                            <MessageTimeline
+                                messages={messagesQuery.data ?? []}
+                                messagesRef={messagesRef}
+                                onScrollPosition={(element) => { stickToBottomRef.current = isNearBottom(element); }}
+                                onMessageElement={(messageId, element) => { messageRefs.current[messageId] = element; }}
+                                searchTargetMessageId={searchTarget?.messageId}
+                                currentUser={meQuery.data?.user}
+                                editingMessageId={editingMessageId}
+                                editingDraft={editingDraft}
+                                onEditingDraftChange={setEditingDraft}
+                                isSavingEdit={updateMessageMutation.isPending}
+                                onSaveEdit={() => updateMessageMutation.mutate()}
+                                onCancelEdit={cancelEditingMessage}
+                                onScrollToMessage={scrollToMessage}
+                                onReply={startReplyingToMessage}
+                                onEdit={startEditingMessage}
+                                onContextMenu={setMessageContextMenu}
+                                onChatIdentityClick={handleChatIdentityClick}
+                                onAuthorMouseUp={handleAuthorMouseUp}
+                                validMentionUsernames={validMentionUsernames}
+                                onJoinRoomPass={joinFromRoomPass}
+                            />
 
                             <form className="composer" onSubmit={handleSend}>
                                 {replyingToMessage && (
