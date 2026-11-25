@@ -52,6 +52,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { SearchOverlay } from "./components/SearchOverlay";
 import { RoomUsersPanel } from "./components/RoomUsersPanel";
 import { MessageContextMenu, RoomContextMenu } from "./components/ContextMenus";
+import { DesktopFrame } from "./components/DesktopFrame";
 import { MessageTimeline } from "./components/MessageTimeline";
 import { MessageComposer } from "./components/MessageComposer";
 import { RoomIconPanel, RoomJoinPanel, RoomPassPanel, UserProfilePanel } from "./components/RoomPanels";
@@ -1144,85 +1145,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     );
 }
 
-function DesktopTitlebar() {
-    async function withWindow(action: (window: import("@tauri-apps/api/window").Window) => Promise<unknown>) {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        await action(getCurrentWindow());
-    }
-
-    return (
-        <header
-            className="desktop-titlebar"
-            data-tauri-drag-region
-        >
-            <strong className="desktop-titlebar-brand" data-tauri-drag-region>
-                <img src="/sb_logo.svg" alt="" />
-                <span>star_byte</span>
-            </strong>
-            <div className="desktop-window-controls" onDoubleClick={(event) => event.stopPropagation()}>
-                <button
-                    type="button"
-                    aria-label="Minimize"
-                    title="Minimize"
-                    onClick={() => void withWindow((window) => window.minimize())}
-                >
-                    -
-                </button>
-                <button
-                    type="button"
-                    aria-label="Maximize"
-                    title="Maximize"
-                    onClick={() => void withWindow((window) => window.toggleMaximize())}
-                >
-                    []
-                </button>
-                <button
-                    type="button"
-                    className="desktop-window-close"
-                    aria-label="Close"
-                    title="Close"
-                    onClick={() => void withWindow((window) => window.close())}
-                >
-                    x
-                </button>
-            </div>
-        </header>
-    );
-}
-
-function DesktopResizeHandles() {
-    const directions = [
-        "North",
-        "NorthEast",
-        "East",
-        "SouthEast",
-        "South",
-        "SouthWest",
-        "West",
-        "NorthWest"
-    ] as const;
-
-    async function startResize(direction: typeof directions[number]) {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        await getCurrentWindow().startResizeDragging(direction);
-    }
-
-    return (
-        <>
-            {directions.map((direction) => (
-                <div
-                    key={direction}
-                    className={`window-resize-handle window-resize-${direction.toLowerCase()}`}
-                    onMouseDown={(event) => {
-                        if (event.button === 0) void startResize(direction);
-                    }}
-                    aria-hidden="true"
-                />
-            ))}
-        </>
-    );
-}
-
 export default function App() {
     const [hasToken, setHasToken] = useState(Boolean(getToken()));
     const [theme, setTheme] = useState(localStorage.getItem("starbyte.theme") ?? "dark");
@@ -1257,11 +1179,5 @@ export default function App() {
 
     if (!IS_TAURI) return content;
 
-    return (
-        <div className="tauri-frame">
-            <DesktopResizeHandles />
-            <DesktopTitlebar />
-            <div className="tauri-content">{content}</div>
-        </div>
-    );
+    return <DesktopFrame>{content}</DesktopFrame>;
 }
