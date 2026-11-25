@@ -17,7 +17,6 @@ import {
     fetchThreads,
     fetchThreadMembers,
     fetchMentionNotifications,
-    fetchEmbed,
     searchMessages,
 
     markMentionNotificationsRead,
@@ -40,7 +39,7 @@ import {
     type Thread,
     type Room,
     type RoomUser, fetchRooms, fetchRoomUsers, deleteThread, updateRoom, deleteRoom, deleteRoomPass, generateRoomPass, deleteMessage,
-    uploadImage, mediaUrl,
+    uploadImage,
     User
 } from "./api";
 import { useSocket } from "./hooks/useSocket";
@@ -51,6 +50,7 @@ import { ProfileScreen } from "./components/ProfileScreen";
 import { ConversationSidebar } from "./components/ConversationSidebar";
 import { AuthScreen } from "./components/AuthScreen";
 import { SearchDatePicker, SearchUserPicker } from "./components/SearchControls";
+import { extractUrls, MessageAttachment, MessageEmbed, renderMessageBody, UPLOADED_IMAGE_RE } from "./components/MessageContent";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 function isGroupedWithPrevious(current: { userId: string; createdAt: string }, previous?: { userId: string; createdAt: string }) {
@@ -224,11 +224,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     }, [messagesQuery.data]);
 
     const roomPassPanelRoom = useMemo(() => rooms.find((room) => room.id === roomPassPanelRoomId) ?? null, [rooms, roomPassPanelRoomId]);
-
-    const ROOM_PASS_RE = /starbyte:\/\/\d{4}-\d{4}/i;
-    const URL_TOKEN_RE = /^(?:https?:\/\/[^\s<]+|\/api\/uploads\/images\/[^\s<]+)$/i;
-    const EMBED_URL_RE = /https?:\/\/[^\s<]+|\/api\/uploads\/images\/[^\s<]+|starbyte:\/\/\d{4}-\d{4}/gi;
-    const UPLOADED_IMAGE_RE = /^\/api\/uploads\/images\/[a-f0-9-]+\.(?:png|jpg|gif|webp)$/i;
 
     useSocket(Boolean(meQuery.data?.user));
     const userId = meQuery.data?.user.id;
@@ -739,155 +734,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         return null;
     }
 
-    function renderMessageBody(
-        body: string,
-        currentUsername?: string,
-        onJoinRoomPass?: (roomPass: string) => void
-    ) {
-        const parts = body.split(/(\s+)/);
-
-        return parts.map((part, index) => {
-            if (!part.trim()) {
-                return <span key={index}>{part}</span>;
-            }
-
-            if (ROOM_PASS_RE.test(part)) {
-                return (
-                    <button
-                        key={index}
-                        type="button"
-                        className="inline-room-pass"
-                        onClick={() => onJoinRoomPass?.(part)}
-                    >
-                        {part}
-                    </button>
-                );
-            }
-
-            if (URL_TOKEN_RE.test(part)) {
-                return (
-                    <a
-                        key={index}
-                        href={mediaUrl(part)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-link"
-                    >
-                        {part}
-                    </a>
-                );
-            }
-
-            if (!part.startsWith("@")) {
-                return <span key={index}>{part}</span>;
-            }
-
-            const usernameMatch = part.match(/^@([a-zA-Z0-9_]+)([^a-zA-Z0-9_]*)$/);
-            if (!usernameMatch) {
-                return <span key={index}>{part}</span>;
-            }
-
-            const [, rawUsername, trailing = ""] = usernameMatch;
-            const normalizedUsername = rawUsername.toLowerCase();
-            const isValidMention = validMentionUsernames.has(normalizedUsername);
-
-            if (!isValidMention) {
-                return <span key={index}>{part}</span>;
-            }
-
-            const isSelfMention = normalizedUsername === currentUsername?.toLowerCase();
-
-            return (
-                <span key={index}>
-                <span className={isSelfMention ? "mention mention-self" : "mention"}>
-                    @{rawUsername}
-                </span>
-                    {trailing}
-            </span>
-            );
-        });
-    }
-
-    function extractUrls(text: string) {
-        return Array.from(new Set(text.match(EMBED_URL_RE) ?? []));
-    }
-
-    function MessageEmbed({url, onJoinRoomPass}: {
-        url: string;
-        onJoinRoomPass: (roomPass: string) => void;
-    }) {
-        if (ROOM_PASS_RE.test(url)) {
-            return <RoomPassEmbed roomPass={url} onJoin={onJoinRoomPass} />;
-        }
-
-        const embedQuery = useQuery({
-            queryKey: ["embed", url],
-            queryFn: () => fetchEmbed(url).then((data) => data.embed),
-            staleTime: 1000 * 60 * 10,
-            retry: 1
-        });
-
-        if (embedQuery.isLoading) {
-            return <div className="link-embed muted">Loading preview…</div>;
-        }
-
-        const embed = embedQuery.data;
-        if (!embed) return null;
-
-        if (embed.embedType === "video" && embed.embedUrl) {
-            return (
-                <div className="link-embed">
-                    <div className="link-embed-top">
-                        <div className="link-embed-site">
-                            {embed.iconUrl && <img src={embed.iconUrl} alt="" className="embed-icon" />}
-                            <span>{embed.siteName ?? embed.provider ?? "Video"}</span>
-                        </div>
-                    </div>
-
-                    {embed.title && <strong className="link-embed-title">{embed.title}</strong>}
-                    {embed.description && <div className="link-embed-desc">{embed.description}</div>}
-
-                    <div className="embed-media">
-                        <iframe
-                            src={embed.embedUrl}
-                            title={embed.title ?? embed.url}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                            allowFullScreen
-                        />
-                    </div>
-                </div>
-            );
-        }
-
-        return (
-            <a
-                className="link-embed"
-                href={embed.url}
-                target="_blank"
-                rel="noreferrer"
-            >
-                <div className="link-embed-top">
-                    <div className="link-embed-site">
-                        {embed.iconUrl && <img src={embed.iconUrl} alt="" className="embed-icon" />}
-                        <span>{embed.siteName ?? embed.provider ?? new URL(embed.url).hostname}</span>
-                    </div>
-                </div>
-
-                {embed.title && <strong className="link-embed-title">{embed.title}</strong>}
-                {embed.description && <div className="link-embed-desc">{embed.description}</div>}
-                {embed.imageUrl && <img src={embed.imageUrl} alt="" className="embed-image" />}
-            </a>
-        );
-    }
-
-    function MessageAttachment({url}: { url: string }) {
-        return (
-            <a className="uploaded-image" href={mediaUrl(url)} target="_blank" rel="noreferrer">
-                <img src={mediaUrl(url)} alt="Uploaded attachment" />
-            </a>
-        );
-    }
-
     function closeMentionPicker() {
         setMentionOpen(false);
         setMentionQuery("");
@@ -1081,34 +927,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
         handleChatIdentityClick(userId, username, event.shiftKey);
     }
-
-    function RoomPassEmbed({roomPass, onJoin}: {
-        roomPass: string;
-        onJoin: (roomPass: string) => void;
-    }) {return (<div className="room-pass-embed">
-                    <div className="room-pass-embed-top">
-                        <strong>Room Pass</strong>
-                        <span className="muted">Invite link</span>
-                    </div>
-
-                    <button
-                        type="button"
-                        className="room-pass-link"
-                        onClick={() => onJoin(roomPass)}
-                    >
-                        {roomPass}
-                    </button>
-
-                    <div className="room-pass-embed-actions">
-                        <button
-                            type="button"
-                            className="button button-primary"
-                            onClick={() => onJoin(roomPass)}
-                        >
-                            Join
-                        </button>
-                    </div>
-                </div>);}
 
     function startEditingMessage(message: Message) {
         setEditingMessageId(message.id);
@@ -1472,7 +1290,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                                                     : "Original message unavailable"}
                                                                             </button>
                                                                         )}
-                                                                        <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
+                                                                        <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass, validMentionUsernames)}</span>
 
                                                                         {urls.map((url) => (
                                                                             UPLOADED_IMAGE_RE.test(url) ? (
@@ -1567,7 +1385,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                                                             : "Original message unavailable"}
                                                                     </button>
                                                                 )}
-                                                                <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass)}</span>
+                                                                <span>{renderMessageBody(message.body, meQuery.data?.user.username, joinFromRoomPass, validMentionUsernames)}</span>
                                                                 {urls.map((url) => (
                                                                     UPLOADED_IMAGE_RE.test(url) ? (
                                                                         <MessageAttachment key={url} url={url} />
