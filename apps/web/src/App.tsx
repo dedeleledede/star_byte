@@ -46,11 +46,11 @@ import { useThreadDrafts } from "./hooks/useThreadDrafts";
 import { useProfileEditor } from "./hooks/useProfileEditor";
 import { useMentions } from "./hooks/useMentions";
 import { PwaPrompt } from "./components/PwaPrompt";
-import { AvatarSquare } from "./components/Avatars";
 import { ProfileScreen } from "./components/ProfileScreen";
 import { ConversationSidebar } from "./components/ConversationSidebar";
 import { AuthScreen } from "./components/AuthScreen";
 import { SearchOverlay } from "./components/SearchOverlay";
+import { RoomUsersPanel } from "./components/RoomUsersPanel";
 import { MessageTimeline } from "./components/MessageTimeline";
 import { MessageComposer } from "./components/MessageComposer";
 import { RoomIconPanel, RoomJoinPanel, RoomPassPanel, UserProfilePanel } from "./components/RoomPanels";
@@ -1018,46 +1018,18 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 </main>
             )}
             {activeThread && (
-                <aside className="room-users-panel">
-                    <div className="thread-header room-search-header">
-                        <div className="chat-header-copy">
-                            <h2>{activeThread.kind === "whisper" || !activeThread.roomId ? activeThread.title : activeRoom?.name ?? "No room selected"}</h2>
-                            <p className="muted">{activeThread.kind === "whisper" ? "whisper participants" : "room users"}</p>
-                        </div>
-                        {screen === "thread" && <button className="button" type="button" onClick={openSearch}>Search</button>}
-                    </div>
-
-                    <div className="room-user-list">
-                        {sidePanelUsers.length === 0 ? (
-                            <div className="muted">
-                                {sidebarMode === "whispers" ? "No whisper participants found." : "No room users found."}
-                            </div>
-                        ) : (
-                            sidePanelUsers.map((user) => (
-                                <button
-                                    key={user.id}
-                                    type="button"
-                                    className="room-user-item"
-                                    onClick={() => {
-                                        createWhisperMutation.reset();
-                                        setSelectedUserProfile(user);
-                                    }}
-                                >
-                                    <AvatarSquare
-                                        displayName={user.displayName}
-                                        avatarUrl={user.avatarUrl}
-                                        size="sm"
-                                    />
-                                    <div className="room-user-copy">
-                                        <strong>{user.displayName}</strong>
-                                        <div className="muted">@{user.username}</div>
-                                        {user.statusText && <div className="muted">{user.statusText}</div>}
-                                    </div>
-                                </button>
-                            ))
-                        )}
-                    </div>
-                </aside>
+                <RoomUsersPanel
+                    thread={activeThread}
+                    room={activeRoom}
+                    users={sidePanelUsers}
+                    sidebarMode={sidebarMode}
+                    showSearch={screen === "thread"}
+                    onSearch={openSearch}
+                    onOpenUser={(user) => {
+                        createWhisperMutation.reset();
+                        setSelectedUserProfile(user);
+                    }}
+                />
             )}
 
             {roomTooltip && (
