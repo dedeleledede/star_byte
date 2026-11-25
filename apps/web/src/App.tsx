@@ -876,7 +876,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         },
         onSuccess: async (data) => {
             await queryClient.invalidateQueries({ queryKey: ["rooms"] });
-            setActiveRoomId(data.room.id);
+            openRoom(data.room.id);
             setRoomName("");
             setRoomOverlayOpen(false);
         }
@@ -888,7 +888,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         },
         onSuccess: async (data) => {
             await queryClient.invalidateQueries({ queryKey: ["rooms"] });
-            setActiveRoomId(data.room.id);
+            openRoom(data.room.id);
             setRoomOverlayOpen(false);
             setJoinRoomPass("");
         }
@@ -1142,8 +1142,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                 if (!nextRoom) return;
 
                 event.preventDefault();
-                setSidebarMode("threads");
-                setActiveRoomId(nextRoom.id);
+                openRoom(nextRoom.id);
                 return;
             }
 
@@ -1536,13 +1535,17 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         );
     }
 
-    function openRoomThread(roomId: string, threadId: string) {
+    function openRoom(roomId: string) {
         setScreen("thread");
         setSelectedUserProfile(null);
         setSearchTarget(null);
         setSearchThread(null);
         setSidebarMode("threads");
         setActiveRoomId(roomId);
+    }
+
+    function openRoomThread(roomId: string, threadId: string) {
+        openRoom(roomId);
         setSelectedThreadByRoom((prev) => ({
             ...prev,
             [roomId]: threadId
@@ -1673,7 +1676,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     async function joinFromRoomPass(roomPass: string) {
         const data = await joinRoomMutation.mutateAsync({ roomPass });
         await queryClient.invalidateQueries({ queryKey: ["rooms"] });
-        setActiveRoomId(data.room.id);
+        openRoom(data.room.id);
     }
 
     if (meQuery.isLoading) {
@@ -1801,7 +1804,10 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             <button
                                 type="button"
                                 className="icon-button"
-                                onClick={() => setSidebarMode((value) => value === "threads" ? "whispers" : "threads")}
+                                onClick={() => {
+                                    setScreen("thread");
+                                    setSidebarMode((value) => value === "threads" ? "whispers" : "threads");
+                                }}
                                 aria-label="Whispers"
                                 title="Whispers"
                             >
@@ -1874,10 +1880,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                             <button
                                 key={room.id}
                                 className={`room-card ${activeRoom?.id === room.id ? "room-card-active" : ""}`}
-                                onClick={() => {
-                                    setSidebarMode("threads");
-                                    setActiveRoomId(room.id);
-                                }}
+                                onClick={() => openRoom(room.id)}
                                 onContextMenu={(event) => {
                                     event.preventDefault();
                                     setRoomContextMenu({
