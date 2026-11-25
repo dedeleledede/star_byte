@@ -44,6 +44,7 @@ import {
 import { useSocket } from "./hooks/useSocket";
 import { useThreadDrafts } from "./hooks/useThreadDrafts";
 import { useProfileEditor } from "./hooks/useProfileEditor";
+import { useMentions } from "./hooks/useMentions";
 import { PwaPrompt } from "./components/PwaPrompt";
 import { AvatarSquare } from "./components/Avatars";
 import { ProfileScreen } from "./components/ProfileScreen";
@@ -51,6 +52,7 @@ import { ConversationSidebar } from "./components/ConversationSidebar";
 import { AuthScreen } from "./components/AuthScreen";
 import { SearchDatePicker, SearchUserPicker } from "./components/SearchControls";
 import { MessageTimeline } from "./components/MessageTimeline";
+import { MessageComposer } from "./components/MessageComposer";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void; theme: string; onThemeChange: (theme: string) => void; }) {
@@ -61,11 +63,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     const [selectedUserProfile, setSelectedUserProfile] = useState<RoomUser | null>(null);
     const [sidebarMode, setSidebarMode] = useState<"threads" | "whispers">("threads");
-
-    const [mentionOpen, setMentionOpen] = useState(false);
-    const [mentionQuery, setMentionQuery] = useState("");
-    const [mentionStart, setMentionStart] = useState<number | null>(null);
-    const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
 
     const [roomName, setRoomName] = useState("");
     const [joinRoomPass, setJoinRoomPass] = useState("");
@@ -194,19 +191,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     const unreadMentionCount = (mentionNotificationsQuery.data ?? []).filter((item) => !item.readAt).length;
 
-    const mentionSuggestions = useMemo(() => {
-        const members = threadMembersQuery.data ?? [];
-        const q = mentionQuery.trim().toLowerCase();
-
-        return members.filter((member) => {
-            if (!q) return true;
-            return (
-                member.username.toLowerCase().includes(q) ||
-                member.displayName.toLowerCase().includes(q)
-            );
-        });
-    }, [threadMembersQuery.data, mentionQuery]);
-
     const usersById = useMemo(() => {
         const entries = (usersQuery.data ?? []).map((user) => [user.id, user] as const);
         return new Map(entries);
@@ -218,6 +202,11 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const userId = meQuery.data?.user.id;
     const threadId = activeThread?.id;
     const { draft, setDraft, setDraftForThread } = useThreadDrafts(userId, threadId);
+    const {
+        mentionOpen, mentionSuggestions,
+        selectedMentionIndex, setSelectedMentionIndex,
+        updateMentionState, insertMention, insertMentionAtCursor, resetMentions
+    } = useMentions(draft, setDraft, composerRef, threadMembersQuery.data ?? [], threadId);
 
     function isNearBottom(element: HTMLElement) {
         return element.scrollHeight - element.scrollTop - element.clientHeight < 48;
@@ -249,10 +238,7 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         onSuccess: async (data, variables) => {
             setDraftForThread(variables.threadId, (current) => current.trim() === variables.body ? "" : current);
             if (activeThread?.id === variables.threadId) {
-                setMentionOpen(false);
-                setMentionQuery("");
-                setMentionStart(null);
-                setSelectedMentionIndex(0);
+                resetMentions();
                 if (replyingToMessage?.id === variables.replyToMessageId) setReplyingToMessage(null);
             }
 
@@ -613,10 +599,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         setEditingMessageId(null);
         setEditingDraft("");
         setReplyingToMessage(null);
-        setMentionOpen(false);
-        setMentionQuery("");
-        setMentionStart(null);
-        setSelectedMentionIndex(0);
     }, [activeThread?.id]);
 
     useEffect(() => {
@@ -678,80 +660,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
         }
 
         return null;
-    }
-
-    function closeMentionPicker() {
-        setMentionOpen(false);
-        setMentionQuery("");
-        setMentionStart(null);
-        setSelectedMentionIndex(0);
-    }
-
-    function updateMentionState(nextValue: string, caret: number) {
-        const beforeCaret = nextValue.slice(0, caret);
-        const atIndex = beforeCaret.lastIndexOf("@");
-
-        if (atIndex === -1) {
-            closeMentionPicker();
-            return;
-        }
-
-        const query = beforeCaret.slice(atIndex + 1);
-
-        // keep the current "cancel if invalid characters appear after @"
-        if (!/^[a-zA-Z0-9_]*$/.test(query)) {
-            closeMentionPicker();
-            return;
-        }
-
-        setMentionOpen(true);
-        setMentionQuery(query);
-        setMentionStart(atIndex);
-        setSelectedMentionIndex(0);
-    }
-
-    function insertMention(username: string) {
-        if (mentionStart === null) return;
-
-        const input = composerRef.current;
-        const caret = input?.selectionStart ?? draft.length;
-        const before = draft.slice(0, mentionStart);
-        const after = draft.slice(caret);
-
-        const next = `${before}@${username} ${after}`;
-        setDraft(next);
-        setMentionOpen(false);
-        setMentionQuery("");
-        setMentionStart(null);
-        setSelectedMentionIndex(0);
-
-        requestAnimationFrame(() => {
-            input?.focus();
-            const position = (`${before}@${username} `).length;
-            input?.setSelectionRange(position, position);
-        });
-    }
-    
-    function insertMentionAtCursor(username: string) {
-        const input = composerRef.current;
-        const selectionStart = input?.selectionStart ?? draft.length;
-        const selectionEnd = input?.selectionEnd ?? selectionStart;
-        const before = draft.slice(0, selectionStart);
-        const after = draft.slice(selectionEnd);
-        const mentionText = `${before.length > 0 && !/\s$/.test(before) ? " " : ""}@${username} `;
-        const next = `${before}${mentionText}${after}`;
-
-        setDraft(next);
-        setMentionOpen(false);
-        setMentionQuery("");
-        setMentionStart(null);
-        setSelectedMentionIndex(0);
-
-        requestAnimationFrame(() => {
-            input?.focus();
-            const position = before.length + mentionText.length;
-            input?.setSelectionRange(position, position);
-        });
     }
 
     function logout() {
@@ -1139,102 +1047,26 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
                                 onJoinRoomPass={joinFromRoomPass}
                             />
 
-                            <form className="composer" onSubmit={handleSend}>
-                                {replyingToMessage && (
-                                    <div className="composer-context">
-                                        <span>
-                                            Replying to <strong>@{replyingToMessage.username}</strong>: {replyingToMessage.body.slice(0, 90)}
-                                        </span>
-                                        <button type="button" className="message-inline-action" onClick={() => setReplyingToMessage(null)}>
-                                            Cancel
-                                        </button>
-                                    </div>
-                                )}
-                                <input
-                                    ref={composerRef}
-                                    value={draft}
-                                    onChange={(event) => {
-                                        const next = event.target.value;
-                                        setDraft(next);
-                                        updateMentionState(next, event.target.selectionStart ?? next.length);
-                                    }}
-                                    onKeyDown={(event) => {
-                                        if (!mentionOpen || mentionSuggestions.length === 0) return;
-                                        if (event.ctrlKey || event.metaKey || event.altKey) return;
-
-                                        if (event.key === "ArrowDown") {
-                                            event.preventDefault();
-                                            setSelectedMentionIndex((value) =>
-                                                Math.min(value + 1, mentionSuggestions.length - 1)
-                                            );
-                                            return;
-                                        }
-
-                                        if (event.key === "ArrowUp") {
-                                            event.preventDefault();
-                                            setSelectedMentionIndex((value) => Math.max(value - 1, 0));
-                                            return;
-                                        }
-
-                                        if (event.key === "Enter" || event.key === "Tab") {
-                                            event.preventDefault();
-                                            insertMention(mentionSuggestions[selectedMentionIndex].username);
-                                            return;
-                                        }
-
-                                        if (event.key === "Escape") {
-                                            event.preventDefault();
-                                            setMentionOpen(false);
-                                            return;
-                                        }
-                                    }}
-                                    placeholder="Write a message"
-                                />
-
-                                {mentionOpen && mentionSuggestions.length > 0 && (
-                                    <div className="mention-picker">
-                                        {mentionSuggestions.map((member, index) => (
-                                            <button
-                                                key={member.id}
-                                                type="button"
-                                                className={`mention-option ${index === selectedMentionIndex ? "mention-option-active" : ""}`}
-                                                onMouseDown={(event) => {
-                                                    event.preventDefault();
-                                                    insertMention(member.username);
-                                                }}
-                                            >
-                                                <AvatarSquare
-                                                    displayName={member.displayName}
-                                                    avatarUrl={member.avatarUrl}
-                                                    size="sm"
-                                                />
-                                                <span>@{member.username}</span>
-                                                <span className="muted">{member.displayName}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-
-                                <label className="button attachment-button">
-                                    {uploadChatImageMutation.isPending ? "Uploading..." : "Image"}
-                                    <input
-                                        className="file-input"
-                                        type="file"
-                                        accept="image/png,image/jpeg,image/gif,image/webp"
-                                        disabled={uploadChatImageMutation.isPending}
-                                        onChange={(event) => {
-                                            const file = event.target.files?.[0];
-                                            if (file && activeThread) uploadChatImageMutation.mutate({ file, threadId: activeThread.id });
-                                            event.target.value = "";
-                                        }}
-                                    />
-                                </label>
-                                <button className="button button-primary" disabled={sendMutation.isPending || !activeThread}>
-                                    Send
-                                </button>
-                                {sendMutation.error && <p className="error">{(sendMutation.error as Error).message}</p>}
-                                {uploadChatImageMutation.error && <p className="error">{(uploadChatImageMutation.error as Error).message}</p>}
-                            </form>
+                            <MessageComposer
+                                composerRef={composerRef}
+                                draft={draft}
+                                onDraftChange={(value, caret) => { setDraft(value); updateMentionState(value, caret); }}
+                                onSend={handleSend}
+                                canSend={Boolean(activeThread)}
+                                sending={sendMutation.isPending}
+                                sendError={sendMutation.error}
+                                replyingToMessage={replyingToMessage}
+                                onCancelReply={() => setReplyingToMessage(null)}
+                                mentionOpen={mentionOpen}
+                                mentionSuggestions={mentionSuggestions}
+                                selectedMentionIndex={selectedMentionIndex}
+                                setSelectedMentionIndex={setSelectedMentionIndex}
+                                onCloseMention={resetMentions}
+                                onInsertMention={insertMention}
+                                uploading={uploadChatImageMutation.isPending}
+                                uploadError={uploadChatImageMutation.error}
+                                onUpload={(file) => { if (activeThread) uploadChatImageMutation.mutate({ file, threadId: activeThread.id }); }}
+                            />
                         </>
                     )}
                 </main>
