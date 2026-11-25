@@ -492,6 +492,8 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
 
     const rooms = roomsQuery.data ?? [];
 
+    const [lowResourceMode, setLowResourceMode] = useState(false);
+
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [isPlainText, setIsPlainText] = useState(false);
 
@@ -1582,7 +1584,7 @@ const updateProfileMutation = useMutation({
     }
 
     return (
-        <div className="shell shell-rooms">
+        <div className={`shell shell-rooms ${lowResourceMode ? "low-resource-mode" : ""}`}>
             {roomOverlayOpen && (
                 <div
                     className="overlay-backdrop"
@@ -2356,6 +2358,14 @@ const updateProfileMutation = useMutation({
                                             title="Alternar Modo de Texto Simples"
                                         >
                                             {isPlainText ? "Modo Normal" : "Modo Texto"}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`button low-resource-toggle-button ${lowResourceMode ? "button-primary" : ""}`}
+                                            onClick={() => setLowResourceMode((prev) => !prev)}
+                                            title="Alternar Modo de Baixo Recurso (estilo IRC)"
+                                        >       
+                                            {lowResourceMode ? "Modo Padrão" : "Baixo Recurso"}
                                         </button>
                                     </div>
                                 </div>

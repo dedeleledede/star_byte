@@ -1840,3 +1840,19 @@ strong {
 .session-card-actions {
   flex: 0 0 auto;
 }
+.low-resource-mode,
+.low-resource-mode * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.low-resource-mode .avatar-square,
+.low-resource-mode .avatar-image,
+.low-resource-mode .avatar-fallback,
+.low-resource-mode .room-avatar,
+.low-resource-mode [class*="avatar"],
+.low-resource-mode [class*="embed"],
+.low-resource-mode [class*="preview"],
+.low-resource-mode [class*="typing"] {
+  display: none !important;
+}
