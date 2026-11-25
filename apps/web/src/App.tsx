@@ -48,30 +48,13 @@ import {
     User
 } from "./api";
 import { useSocket } from "./hooks/useSocket";
+import { useThreadDrafts } from "./hooks/useThreadDrafts";
 import { PwaPrompt } from "./components/PwaPrompt";
 import { AvatarSquare } from "./components/Avatars";
 import { ProfileScreen } from "./components/ProfileScreen";
 import { ConversationSidebar } from "./components/ConversationSidebar";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
-const DRAFT_STORAGE_KEY = "starbyte.thread-drafts";
-
-function loadDrafts(): Record<string, Record<string, string>> {
-    try {
-        const stored = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? "{}");
-        if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
-
-        return Object.fromEntries(Object.entries(stored).map(([userId, drafts]) => [
-            userId,
-            drafts && typeof drafts === "object" && !Array.isArray(drafts)
-                ? Object.fromEntries(Object.entries(drafts).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
-                : {}
-        ]));
-    } catch {
-        return {};
-    }
-}
-
 function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     const [mode, setMode] = useState<"login" | "register">("login");
     const [username, setUsername] = useState("");
@@ -583,42 +566,9 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const UPLOADED_IMAGE_RE = /^\/api\/uploads\/images\/[a-f0-9-]+\.(?:png|jpg|gif|webp)$/i;
 
     useSocket(Boolean(meQuery.data?.user));
-    const [draftsByUser, setDraftsByUser] = useState(loadDrafts);
     const userId = meQuery.data?.user.id;
     const threadId = activeThread?.id;
-    const draft = userId && threadId ? draftsByUser[userId]?.[threadId] ?? "" : "";
-
-    useEffect(() => {
-        try {
-            localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftsByUser));
-        } catch {
-            // Drafts remain available in this session if local storage is unavailable.
-        }
-    }, [draftsByUser]);
-
-    function setDraftForThread(targetThreadId: string, value: string | ((current: string) => string)) {
-        if (!userId) return;
-
-        setDraftsByUser((current) => {
-            const userDrafts = current[userId] ?? {};
-            const previous = userDrafts[targetThreadId] ?? "";
-            const nextValue = typeof value === "function" ? value(previous) : value;
-            if (previous === nextValue) return current;
-
-            const nextUserDrafts = { ...userDrafts };
-            if (nextValue) nextUserDrafts[targetThreadId] = nextValue;
-            else delete nextUserDrafts[targetThreadId];
-
-            const next = { ...current };
-            if (Object.keys(nextUserDrafts).length) next[userId] = nextUserDrafts;
-            else delete next[userId];
-            return next;
-        });
-    }
-
-    function setDraft(value: string | ((current: string) => string)) {
-        if (threadId) setDraftForThread(threadId, value);
-    }
+    const { draft, setDraft, setDraftForThread } = useThreadDrafts(userId, threadId);
 
     function isNearBottom(element: HTMLElement) {
         return element.scrollHeight - element.scrollTop - element.clientHeight < 48;
