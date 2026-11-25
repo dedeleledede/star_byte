@@ -25,7 +25,6 @@ import {
     setToken,
     getToken,
 
-    updateMe,
     updateMessage,
 
     createWhisper,
@@ -44,6 +43,7 @@ import {
 } from "./api";
 import { useSocket } from "./hooks/useSocket";
 import { useThreadDrafts } from "./hooks/useThreadDrafts";
+import { useProfileEditor } from "./hooks/useProfileEditor";
 import { PwaPrompt } from "./components/PwaPrompt";
 import { AvatarSquare } from "./components/Avatars";
 import { ProfileScreen } from "./components/ProfileScreen";
@@ -69,10 +69,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
     const [screen, setScreen] = useState<"thread" | "profile">("thread");
 
-    const [profileDisplayName, setProfileDisplayName] = useState("");
-    const [profileAvatarUrl, setProfileAvatarUrl] = useState("");
-    const [profileBio, setProfileBio] = useState("");
-    const [profileStatusText, setProfileStatusText] = useState("");
     const [selectedUserProfile, setSelectedUserProfile] = useState<RoomUser | null>(null);
     const [sidebarMode, setSidebarMode] = useState<"threads" | "whispers">("threads");
 
@@ -111,6 +107,13 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
     const stickToBottomRef = useRef(true);
 
     const meQuery = useQuery({queryKey: ["me"], queryFn: fetchMe});
+    const {
+        profileDisplayName, setProfileDisplayName,
+        profileAvatarUrl, setProfileAvatarUrl,
+        profileBio, setProfileBio,
+        profileStatusText, setProfileStatusText,
+        updateProfileMutation, uploadProfileImageMutation
+    } = useProfileEditor(meQuery.data?.user, () => setScreen("thread"));
 
     const roomsQuery = useQuery({queryKey: ["rooms"], queryFn: () => fetchRooms().then((data) => data.rooms)});
 
@@ -242,40 +245,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             await queryClient.invalidateQueries({ queryKey: ["whispers"] });
             openWhisper(data.thread.id);
             setSelectedUserProfile(null);
-        }
-    });
-
-    const updateProfileMutation = useMutation({
-        mutationFn: async () => {
-            return updateMe({
-                displayName: profileDisplayName,
-                avatarUrl: profileAvatarUrl,
-                bio: profileBio,
-                statusText: profileStatusText
-            });
-        },
-        onSuccess: async (data) => {
-            queryClient.setQueryData(["me"], data);
-            setProfileDisplayName(data.user.displayName);
-            setProfileAvatarUrl(data.user.avatarUrl ?? "");
-            setProfileBio(data.user.bio ?? "");
-            setProfileStatusText(data.user.statusText ?? "");
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ["users"] }),
-                queryClient.invalidateQueries({ queryKey: ["room-users"] }),
-                queryClient.invalidateQueries({ queryKey: ["thread-members"] }),
-                queryClient.invalidateQueries({ queryKey: ["messages"] }),
-                queryClient.invalidateQueries({ queryKey: ["mention-notifications"] }),
-                queryClient.invalidateQueries({ queryKey: ["whispers"] })
-            ]);
-            setScreen("thread");
-        }
-    });
-
-    const uploadProfileImageMutation = useMutation({
-        mutationFn: (file: File) => uploadImage(file),
-        onSuccess: (data) => {
-            setProfileAvatarUrl(data.url);
         }
     });
 
@@ -505,15 +474,6 @@ function ThreadShell({ onLogout, theme, onThemeChange }: { onLogout: () => void;
             setActiveRoomId(rooms[0].id);
         }
     }, [rooms, activeRoomId]);
-
-    useEffect(() => {
-        if (!meQuery.data?.user) return;
-
-        setProfileDisplayName(meQuery.data.user.displayName ?? "");
-        setProfileAvatarUrl(meQuery.data.user.avatarUrl ?? "");
-        setProfileBio(meQuery.data.user.bio ?? "");
-        setProfileStatusText(meQuery.data.user.statusText ?? "");
-    }, [meQuery.data?.user]);
 
     useEffect(() => {
         if (!activeThread?.id) return;
